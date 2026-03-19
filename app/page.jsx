@@ -404,9 +404,9 @@ export default function Page() {
   return (
     <div style={s.page}>
       <header style={s.header}>
-        <div style={s.headerInner}>
-          <div style={s.logo}>✈ carnet <span style={{color:'#2a5c45'}}>voyage</span></div>
-          <div style={s.tabs}>
+        <div style={s.headerInner} className="header-inner">
+          <div style={s.logo} className="app-logo">✈ carnet <span style={{color:'#2a5c45'}}>voyage</span></div>
+          <div style={s.tabs} className="nav-tabs">
             {allTabs.map(([id,label])=>(
               <button key={id} onClick={()=>setTab(id)}
                 style={{...s.tab,...(tab===id?s.tabActive:{})}}>
@@ -417,7 +417,7 @@ export default function Page() {
         </div>
       </header>
 
-      <main style={s.main}>
+      <main style={s.main} className="app-main">
 
         {/* TRANSPORTS */}
         {tab==='transports' && (
@@ -429,7 +429,7 @@ export default function Page() {
               {filteredT.map(e=>(
                 <div key={e._id} style={{...s.card,...(editingId===e._id?{borderColor:'#2a5c45',borderWidth:2,borderStyle:'solid'}:{})}}>
                   <CardActions e={e} kind="transport" />
-                  <div style={s.cardHeader}>
+                  <div style={s.cardHeader} className="card-header">
                     <span style={{...s.typeBadge,...s['badge_'+e.type]}}>{typeIcons[e.type]} {typeLabels[e.type]}</span>
                     {e.num && <span style={{fontSize:13,color:'#6b6b67'}}>{e.num}</span>}
                     <span style={s.route}>{e.from} → {e.to}</span>
@@ -464,7 +464,7 @@ export default function Page() {
                 return (
                   <div key={e._id} style={{...s.card,...(editingId===e._id?{borderColor:'#2a5c45',borderWidth:2,borderStyle:'solid'}:{})}}>
                     <CardActions e={e} kind="depense" />
-                    <div style={s.cardHeader}>
+                    <div style={s.cardHeader} className="card-header">
                       <span style={{...s.typeBadge,...s['badge_cat_'+cat]}}>{catIcons[cat]} {catLabels[cat]}</span>
                       <span style={s.route}>{e.label||'—'}</span>
                       <PersonTagEl person={e.person} />
@@ -502,7 +502,7 @@ export default function Page() {
                   {items.sort((a,b)=>(a.ordre||0)-(b.ordre||0)).map(e=>(
                     <div key={e._id} style={{...s.card,...(editingId===e._id?{borderColor:'#2a5c45',borderWidth:2,borderStyle:'solid'}:{})}}>
                       <CardActions e={e} kind="etape" />
-                      <div style={s.cardHeader}>
+                      <div style={s.cardHeader} className="card-header">
                         <span style={{...s.typeBadge,background:'#e6fbe8',color:'#0a4a1a'}}>📍 Étape</span>
                         <span style={s.route}>{e.titre}</span>
                         <PersonTagEl person={e.person} />
