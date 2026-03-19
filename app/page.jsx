@@ -265,6 +265,36 @@ function EtapeForm({ data, set, geocoding, onGeocode }) {
   )
 }
 
+// ── Edit / Card sub-components ────────────────────────────────────────────────
+function EditSection({ e, kind, editingId, editForm, setEditForm, geocoding, handleGeocode, saving, setEditingId, saveEdit }) {
+  if (editingId!==e._id) return null
+  return (
+    <div style={{marginTop:16,paddingTop:16,borderTopWidth:1,borderTopStyle:'solid',borderTopColor:'#e8e6e0'}}>
+      {kind==='transport' && <TransportForm data={editForm} set={setEditForm} />}
+      {kind==='depense'   && <DepenseForm data={editForm} set={setEditForm} />}
+      {kind==='etape'     && <EtapeForm data={editForm} set={setEditForm} geocoding={geocoding} onGeocode={()=>handleGeocode(editForm,setEditForm)} />}
+      <div style={{display:'flex',gap:8,marginTop:12}}>
+        <button style={s.cancelBtn} onClick={()=>setEditingId(null)}>Annuler</button>
+        <button style={s.saveBtn} disabled={saving} onClick={()=>saveEdit(e._id)}>
+          {saving?'Enregistrement…':'Enregistrer'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function CardActions({ e, kind, editingId, startEdit, setEditingId, deleteEntry }) {
+  const isEditing = editingId===e._id
+  return (
+    <div style={s.cardActions}>
+      <button style={s.iconBtn} onClick={()=>isEditing?setEditingId(null):startEdit(e,kind)}>
+        {isEditing?'✕ Fermer':'✏️ Modifier'}
+      </button>
+      <button style={s.iconBtn} onClick={()=>deleteEntry(e._id)}>✕</button>
+    </div>
+  )
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 export default function Page() {
   const [transports, setTransports] = useState([])
@@ -372,34 +402,8 @@ export default function Page() {
     ['resume','Résumé'],
   ]
 
-  function EditSection({ e, kind }) {
-    if (editingId!==e._id) return null
-    return (
-      <div style={{marginTop:16,paddingTop:16,borderTopWidth:1,borderTopStyle:'solid',borderTopColor:'#e8e6e0'}}>
-        {kind==='transport' && <TransportForm data={editForm} set={setEditForm} />}
-        {kind==='depense'   && <DepenseForm data={editForm} set={setEditForm} />}
-        {kind==='etape'     && <EtapeForm data={editForm} set={setEditForm} geocoding={geocoding} onGeocode={()=>handleGeocode(editForm,setEditForm)} />}
-        <div style={{display:'flex',gap:8,marginTop:12}}>
-          <button style={s.cancelBtn} onClick={()=>setEditingId(null)}>Annuler</button>
-          <button style={s.saveBtn} disabled={saving} onClick={()=>saveEdit(e._id)}>
-            {saving?'Enregistrement…':'Enregistrer'}
-          </button>
-        </div>
-      </div>
-    )
-  }
-
-  function CardActions({ e, kind }) {
-    const isEditing = editingId===e._id
-    return (
-      <div style={s.cardActions}>
-        <button style={s.iconBtn} onClick={()=>isEditing?setEditingId(null):startEdit(e,kind)}>
-          {isEditing?'✕ Fermer':'✏️ Modifier'}
-        </button>
-        <button style={s.iconBtn} onClick={()=>deleteEntry(e._id)}>✕</button>
-      </div>
-    )
-  }
+  const editSectionProps = { editingId, editForm, setEditForm, geocoding, handleGeocode, saving, setEditingId, saveEdit }
+  const cardActionsProps = { editingId, startEdit, setEditingId, deleteEntry }
 
   return (
     <div style={s.page}>
@@ -428,7 +432,7 @@ export default function Page() {
             <div style={{display:'flex',flexDirection:'column',gap:12}}>
               {filteredT.map(e=>(
                 <div key={e._id} style={{...s.card,...(editingId===e._id?{borderColor:'#2a5c45',borderWidth:2,borderStyle:'solid'}:{})}}>
-                  <CardActions e={e} kind="transport" />
+                  <CardActions e={e} kind="transport" {...cardActionsProps} />
                   <div style={s.cardHeader} className="card-header">
                     <span style={{...s.typeBadge,...s['badge_'+e.type]}}>{typeIcons[e.type]} {typeLabels[e.type]}</span>
                     {e.num && <span style={{fontSize:13,color:'#6b6b67'}}>{e.num}</span>}
@@ -445,7 +449,7 @@ export default function Page() {
                     {e.booking  && <div style={s.detail}>Réservation<span style={{display:'block'}}>{e.booking}</span></div>}
                   </div>
                   {e.note && <div style={s.note}>{e.note}</div>}
-                  <EditSection e={e} kind="transport" />
+                  <EditSection e={e} kind="transport" {...editSectionProps} />
                 </div>
               ))}
             </div>
@@ -463,7 +467,7 @@ export default function Page() {
                 const cat = e.categorie||'autre'
                 return (
                   <div key={e._id} style={{...s.card,...(editingId===e._id?{borderColor:'#2a5c45',borderWidth:2,borderStyle:'solid'}:{})}}>
-                    <CardActions e={e} kind="depense" />
+                    <CardActions e={e} kind="depense" {...cardActionsProps} />
                     <div style={s.cardHeader} className="card-header">
                       <span style={{...s.typeBadge,...s['badge_cat_'+cat]}}>{catIcons[cat]} {catLabels[cat]}</span>
                       <span style={s.route}>{e.label||'—'}</span>
@@ -474,7 +478,7 @@ export default function Page() {
                       {e.date && <div style={s.detail}>Date<span style={{display:'block'}}>{formatDate(e.date)}</span></div>}
                     </div>
                     {e.note && <div style={s.note}>{e.note}</div>}
-                    <EditSection e={e} kind="depense" />
+                    <EditSection e={e} kind="depense" {...editSectionProps} />
                   </div>
                 )
               })}
@@ -501,7 +505,7 @@ export default function Page() {
                 <div style={{display:'flex',flexDirection:'column',gap:10,paddingLeft:20,borderLeftWidth:2,borderLeftStyle:'solid',borderLeftColor:'#e0ddd6',marginLeft:5}}>
                   {items.sort((a,b)=>(a.ordre||0)-(b.ordre||0)).map(e=>(
                     <div key={e._id} style={{...s.card,...(editingId===e._id?{borderColor:'#2a5c45',borderWidth:2,borderStyle:'solid'}:{})}}>
-                      <CardActions e={e} kind="etape" />
+                      <CardActions e={e} kind="etape" {...cardActionsProps} />
                       <div style={s.cardHeader} className="card-header">
                         <span style={{...s.typeBadge,background:'#e6fbe8',color:'#0a4a1a'}}>📍 Étape</span>
                         <span style={s.route}>{e.titre}</span>
@@ -514,7 +518,7 @@ export default function Page() {
                         </div>
                       )}
                       {e.note && <div style={s.note}>{e.note}</div>}
-                      <EditSection e={e} kind="etape" />
+                      <EditSection e={e} kind="etape" {...editSectionProps} />
                     </div>
                   ))}
                 </div>
