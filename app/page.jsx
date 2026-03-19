@@ -716,15 +716,15 @@ export default function Page() {
                     </div>
                   </div>
                   <div style={{display:'flex',flexDirection:'column'}}>
-                    {[...transports.map(e=>({...e,_kind:'transport'})),...depenses.map(e=>({...e,_kind:'depense'})),...etapes.map(e=>({...e,_kind:'etape'})),...hebergements.map(e=>({...e,_kind:'hebergement',date:e.dateArrivee}))]
+                    {[...transports.map(e=>({...e,_kind:'transport'})),...depenses.map(e=>({...e,_kind:'depense'})),...etapes.map(e=>({...e,_kind:'etape'})),...hebergements.map(e=>({...e,_kind:'hebergement',date:e.dateArrivee})),...hebergements.filter(e=>e.dateDepart).map(e=>({...e,_kind:'hebergement_out',date:e.dateDepart}))]
                       .filter(e=>chronoFilter==='all'||(e.person||'both')===chronoFilter||(e.person||'both')==='both')
                       .sort((a,b)=>a.date<b.date?-1:1)
                       .map((e,i,arr)=>{
                         const p = e.person||'both'
-                        const icon = e._kind==='transport'?typeIcons[e.type]:e._kind==='depense'?catIcons[e.categorie||'autre']:e._kind==='hebergement'?'🏨':'📍'
-                        const title = e._kind==='transport'?`${e.from} → ${e.to}`:e._kind==='depense'?e.label:e._kind==='hebergement'?e.nom:e.titre
+                        const icon = e._kind==='transport'?typeIcons[e.type]:e._kind==='depense'?catIcons[e.categorie||'autre']:e._kind==='hebergement'?'🏨 Check-in':e._kind==='hebergement_out'?'🏨 Check-out':'📍'
+                        const title = e._kind==='transport'?`${e.from} → ${e.to}`:e._kind==='depense'?e.label:(e._kind==='hebergement'||e._kind==='hebergement_out')?e.nom:e.titre
                         return (
-                          <div key={e._id} style={{display:'flex',gap:14}}>
+                          <div key={e._id+e._kind} style={{display:'flex',gap:14}}>
                             <div style={{display:'flex',flexDirection:'column',alignItems:'center',paddingTop:2}}>
                               <div style={{width:12,height:12,borderRadius:'50%',background:'#2a5c45',flexShrink:0}} />
                               {i<arr.length-1&&<div style={{width:2,background:'#e0ddd6',flex:1,minHeight:24,margin:'4px 0'}} />}
