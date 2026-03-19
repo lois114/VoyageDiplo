@@ -66,6 +66,54 @@ function groupByDay(items) {
   return Object.entries(map).sort(([a],[b]) => a<b?-1:1)
 }
 
+function generateICS(transports, etapes, hebergements) {
+  const d = s => s.replace(/-/g,'')
+  const dt = (date, time) => time ? `${d(date)}T${time.replace(/:/g,'')}00` : null
+  const esc = s => (s||'').replace(/,/g,'\\,').replace(/;/g,'\\;').replace(/\n/g,'\\n')
+
+  const lines = ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Carnet Voyage//FR','CALSCALE:GREGORIAN']
+
+  transports.forEach(e => {
+    if (!e.date) return
+    const start = dt(e.date, e.timeDep)
+    const end   = dt(e.dateArr||e.date, e.timeArr)
+    lines.push('BEGIN:VEVENT',
+      `UID:transport-${e._id}@carnet-voyage`,
+      start ? `DTSTART:${start}` : `DTSTART;VALUE=DATE:${d(e.date)}`,
+      end   ? `DTEND:${end}`     : `DTEND;VALUE=DATE:${d(e.dateArr||e.date)}`,
+      `SUMMARY:${esc(typeIcons[e.type]+' '+e.from+' → '+e.to)}`,
+      `DESCRIPTION:${esc([e.company,e.num,e.booking].filter(Boolean).join(' · '))}`,
+      'END:VEVENT')
+  })
+
+  hebergements.forEach(e => {
+    if (!e.dateArrivee) return
+    lines.push('BEGIN:VEVENT',
+      `UID:hebergement-${e._id}@carnet-voyage`,
+      `DTSTART;VALUE=DATE:${d(e.dateArrivee)}`,
+      `DTEND;VALUE=DATE:${d(e.dateDepart||e.dateArrivee)}`,
+      `SUMMARY:${esc('🏨 '+e.nom)}`,
+      `LOCATION:${esc(e.lieu)}`,
+      `DESCRIPTION:${esc(e.lien)}`,
+      'END:VEVENT')
+  })
+
+  etapes.forEach(e => {
+    if (!e.date) return
+    lines.push('BEGIN:VEVENT',
+      `UID:etape-${e._id}@carnet-voyage`,
+      `DTSTART;VALUE=DATE:${d(e.date)}`,
+      `DTEND;VALUE=DATE:${d(e.date)}`,
+      `SUMMARY:${esc('📍 '+e.titre)}`,
+      `LOCATION:${esc(e.lieu)}`,
+      `DESCRIPTION:${esc(e.note)}`,
+      'END:VEVENT')
+  })
+
+  lines.push('END:VCALENDAR')
+  return lines.join('\r\n')
+}
+
 async function geocode(lieu) {
   try {
     const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(lieu)}&format=json&limit=1`)
@@ -664,6 +712,15 @@ export default function Page() {
             {(transports.length===0&&depenses.length===0)
               ? <div style={s.empty}><div style={{fontSize:40,marginBottom:12}}>📊</div>Ajoute des entrées pour voir le résumé.</div>
               : <>
+                  <button onClick={()=>{
+                    const content = generateICS(transports, etapes, hebergements)
+                    const blob = new Blob([content], {type:'text/calendar;charset=utf-8'})
+                    const url = URL.createObjectURL(blob)
+                    const a = document.createElement('a'); a.href=url; a.download='carnet-voyage.ics'; a.click()
+                    URL.revokeObjectURL(url)
+                  }} style={{...s.saveBtn,display:'flex',alignItems:'center',gap:8,justifyContent:'center',padding:'11px 20px',marginBottom:24,width:'100%'}}>
+                    📅 Exporter vers Google Calendar (.ics)
+                  </button>
                   <div style={s.sectionTitle}>Budget & Dépenses</div>
                   {[['lois','Loïs','#fff4e6','#7a3e00','#e8a04a'],['ines','Ines','#fce8f0','#7a1a3e','#d4729a']].map(([p,name,bg,color,accent])=>{
                     const spent = totals[p]['€'] || 0
