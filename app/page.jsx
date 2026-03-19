@@ -20,6 +20,9 @@ const QUERY_DEPENSE = `*[_type == "depense"] | order(date asc) {
 const QUERY_ETAPE = `*[_type == "etape"] | order(date asc, ordre asc) {
   _id, titre, lieu, lat, lng, date, ordre, note, person
 }`
+const QUERY_HEBERGEMENT = `*[_type == "hebergement"] | order(dateArrivee asc) {
+  _id, nom, lieu, dateArrivee, dateDepart, prix, currency, person, lien, note
+}`
 
 const typeLabels  = { avion:'Avion', train:'Train', bus:'Bus', taxi:'Taxi', metro:'Métro', autre:'Autre' }
 const typeIcons   = { avion:'✈', train:'🚄', bus:'🚌', taxi:'🚕', metro:'🚇', autre:'🚀' }
@@ -31,11 +34,12 @@ const personClass = { lois:'ptag_lois', ines:'ptag_ines', both:'ptag_both' }
 const EMPTY_T = { type:'avion', num:'', from:'', to:'', date:'', timeDep:'', timeArr:'', terminal:'', company:'', booking:'', price:'', currency:'€', person:'both', note:'' }
 const EMPTY_D = { categorie:'bouffe', label:'', date:'', price:'', currency:'€', person:'both', note:'' }
 const EMPTY_E = { titre:'', lieu:'', lat:'', lng:'', date:'', ordre:'', note:'', person:'both' }
+const EMPTY_H = { nom:'', lieu:'', dateArrivee:'', dateDepart:'', price:'', currency:'€', person:'both', lien:'', note:'' }
 
-function calcTotals(transports, depenses) {
+function calcTotals(transports, depenses, hebergements=[]) {
   const result = { lois:{}, ines:{}, both:{} }
   const add = (p, c, v) => { result[p][c] = (result[p][c]||0) + v }
-  ;[...transports,...depenses].forEach(e => {
+  ;[...transports,...depenses,...hebergements].forEach(e => {
     const p = e.person||'both', c = e.currency||'€', v = e.price ? parseFloat(e.price) : 0
     if (!v) return
     if (p==='both') { add('lois',c,v); add('ines',c,v); add('both',c,v) }
@@ -265,14 +269,40 @@ function EtapeForm({ data, set, geocoding, onGeocode }) {
   )
 }
 
+function HebergementForm({ data, set }) {
+  return (
+    <div>
+      <div style={s.sectionTitle}>Hébergement</div>
+      <div style={s.row}>
+        <Field label="Nom" value={data.nom} onChange={v=>set({...data,nom:v})} placeholder="Hôtel Ibis, Airbnb…" />
+        <Field label="Lieu" value={data.lieu} onChange={v=>set({...data,lieu:v})} placeholder="Barcelone, Espagne" />
+      </div>
+      <div style={s.row}>
+        <Field label="Check-in" type="date" value={data.dateArrivee} onChange={v=>set({...data,dateArrivee:v})} />
+        <Field label="Check-out" type="date" value={data.dateDepart} onChange={v=>set({...data,dateDepart:v})} />
+      </div>
+      <div style={s.sectionTitle}>Prix & Voyageur</div>
+      <div style={s.row}>
+        <Field label="Prix total"><PriceRow data={data} set={set} /></Field>
+        <Field label="Concerne"><PersonToggle value={data.person} onChange={v=>set({...data,person:v})} /></Field>
+      </div>
+      <div style={s.sectionTitle}>Lien de réservation</div>
+      <Field label="URL" value={data.lien} onChange={v=>set({...data,lien:v})} placeholder="https://…" />
+      <div style={s.sectionTitle}>Notes</div>
+      <textarea style={{...s.input,minHeight:60,resize:'vertical',width:'100%'}} value={data.note} onChange={e=>set({...data,note:e.target.value})} placeholder="Code d'accès, étage, infos pratiques…" />
+    </div>
+  )
+}
+
 // ── Edit / Card sub-components ────────────────────────────────────────────────
 function EditSection({ e, kind, editingId, editForm, setEditForm, geocoding, handleGeocode, saving, setEditingId, saveEdit }) {
   if (editingId!==e._id) return null
   return (
     <div style={{marginTop:16,paddingTop:16,borderTopWidth:1,borderTopStyle:'solid',borderTopColor:'#e8e6e0'}}>
-      {kind==='transport' && <TransportForm data={editForm} set={setEditForm} />}
-      {kind==='depense'   && <DepenseForm data={editForm} set={setEditForm} />}
-      {kind==='etape'     && <EtapeForm data={editForm} set={setEditForm} geocoding={geocoding} onGeocode={()=>handleGeocode(editForm,setEditForm)} />}
+      {kind==='transport'    && <TransportForm data={editForm} set={setEditForm} />}
+      {kind==='depense'      && <DepenseForm data={editForm} set={setEditForm} />}
+      {kind==='etape'        && <EtapeForm data={editForm} set={setEditForm} geocoding={geocoding} onGeocode={()=>handleGeocode(editForm,setEditForm)} />}
+      {kind==='hebergement'  && <HebergementForm data={editForm} set={setEditForm} />}
       <div style={{display:'flex',gap:8,marginTop:12}}>
         <button style={s.cancelBtn} onClick={()=>setEditingId(null)}>Annuler</button>
         <button style={s.saveBtn} disabled={saving} onClick={()=>saveEdit(e._id)}>
@@ -297,9 +327,10 @@ function CardActions({ e, kind, editingId, startEdit, setEditingId, deleteEntry 
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 export default function Page() {
-  const [transports, setTransports] = useState([])
-  const [depenses, setDepenses]     = useState([])
-  const [etapes, setEtapes]         = useState([])
+  const [transports, setTransports]     = useState([])
+  const [depenses, setDepenses]         = useState([])
+  const [etapes, setEtapes]             = useState([])
+  const [hebergements, setHebergements] = useState([])
   const [tab, setTab]               = useState('transports')
   const [addType, setAddType]       = useState('transport')
   const [filter, setFilter]         = useState('all')
@@ -312,17 +343,30 @@ export default function Page() {
   const [formT, setFormT]           = useState(EMPTY_T)
   const [formD, setFormD]           = useState(EMPTY_D)
   const [formE, setFormE]           = useState(EMPTY_E)
+  const [formH, setFormH]           = useState(EMPTY_H)
   const [editForm, setEditForm]     = useState({})
+  const [budgets, setBudgets]       = useState({ lois:'', ines:'' })
+
+  useEffect(() => {
+    const saved = localStorage.getItem('voyage_budgets')
+    if (saved) setBudgets(JSON.parse(saved))
+  }, [])
 
   useEffect(()=>{ fetchAll() },[])
 
   async function fetchAll() {
     setLoading(true)
     try {
-      const [t,d,e] = await Promise.all([client.fetch(QUERY_TRANSPORT), client.fetch(QUERY_DEPENSE), client.fetch(QUERY_ETAPE)])
-      setTransports(t); setDepenses(d); setEtapes(e)
+      const [t,d,e,h] = await Promise.all([client.fetch(QUERY_TRANSPORT), client.fetch(QUERY_DEPENSE), client.fetch(QUERY_ETAPE), client.fetch(QUERY_HEBERGEMENT)])
+      setTransports(t); setDepenses(d); setEtapes(e); setHebergements(h)
     } catch(e){ console.error(e) }
     setLoading(false)
+  }
+
+  function saveBudget(person, val) {
+    const updated = { ...budgets, [person]: val }
+    setBudgets(updated)
+    localStorage.setItem('voyage_budgets', JSON.stringify(updated))
   }
 
   async function handleGeocode(data, set) {
@@ -350,6 +394,16 @@ export default function Page() {
     try {
       await client.create({_type:'depense',...formD,price:formD.price?parseFloat(formD.price):undefined})
       setFormD(EMPTY_D); await fetchAll(); setTab('depenses')
+    } catch(e){ alert('Erreur lors de la sauvegarde.') }
+    setSaving(false)
+  }
+
+  async function addHebergement() {
+    if (!formH.nom) return alert('Merci d\'indiquer le nom de l\'hébergement.')
+    setSaving(true)
+    try {
+      await client.create({_type:'hebergement',...formH,price:formH.price?parseFloat(formH.price):undefined})
+      setFormH(EMPTY_H); await fetchAll(); setTab('hebergements')
     } catch(e){ alert('Erreur lors de la sauvegarde.') }
     setSaving(false)
   }
@@ -392,12 +446,13 @@ export default function Page() {
 
   const filteredT  = transports.filter(e=>filter==='all'||e.person===filter||e.person==='both')
   const filteredD  = depenses.filter(e=>filter==='all'||e.person===filter||e.person==='both')
-  const totals     = calcTotals(transports, depenses)
+  const totals     = calcTotals(transports, depenses, hebergements)
   const dayGroups  = groupByDay(etapes)
 
   const allTabs = [
     ['transports','✈ Transports'],
     ['depenses','💸 Dépenses'],
+    ['hebergements','🏨 Hébergements'],
     ['roadmap','🗺 Roadmap'],
     ['ajouter','+ Ajouter'],
     ['resume','Résumé'],
@@ -487,6 +542,38 @@ export default function Page() {
           </div>
         )}
 
+        {/* HÉBERGEMENTS */}
+        {tab==='hebergements' && (
+          <div>
+            <FilterBar filter={filter} setFilter={setFilter} onRefresh={fetchAll} />
+            {loading && <div style={s.empty}>Chargement…</div>}
+            {!loading && hebergements.filter(e=>filter==='all'||e.person===filter||e.person==='both').length===0 && (
+              <div style={s.empty}><div style={{fontSize:40,marginBottom:12}}>🏨</div>Aucun hébergement.</div>
+            )}
+            <div style={{display:'flex',flexDirection:'column',gap:12}}>
+              {hebergements.filter(e=>filter==='all'||e.person===filter||e.person==='both').map(e=>(
+                <div key={e._id} style={{...s.card,...(editingId===e._id?{borderColor:'#2a5c45',borderWidth:2,borderStyle:'solid'}:{})}}>
+                  <CardActions e={e} kind="hebergement" {...cardActionsProps} />
+                  <div style={s.cardHeader} className="card-header">
+                    <span style={{...s.typeBadge,background:'#e6fbe8',color:'#0a4a1a'}}>🏨 Hébergement</span>
+                    <span style={s.route}>{e.nom||'—'}</span>
+                    <PersonTagEl person={e.person} />
+                    {e.price && <span style={s.priceTag}>{e.price.toFixed(2)} {e.currency||'€'}</span>}
+                  </div>
+                  <div style={s.details}>
+                    {e.lieu        && <div style={s.detail}>Lieu<span style={{display:'block'}}>{e.lieu}</span></div>}
+                    {e.dateArrivee && <div style={s.detail}>Check-in<span style={{display:'block'}}>{formatDate(e.dateArrivee)}</span></div>}
+                    {e.dateDepart  && <div style={s.detail}>Check-out<span style={{display:'block'}}>{formatDate(e.dateDepart)}</span></div>}
+                  </div>
+                  {e.lien && <a href={e.lien} target="_blank" rel="noreferrer" style={{display:'inline-block',marginTop:8,fontSize:12,color:'#2a5c45',textDecoration:'underline'}}>🔗 Voir la réservation</a>}
+                  {e.note && <div style={s.note}>{e.note}</div>}
+                  <EditSection e={e} kind="hebergement" {...editSectionProps} />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* ROADMAP */}
         {tab==='roadmap' && (
           <div>
@@ -533,7 +620,7 @@ export default function Page() {
         {tab==='ajouter' && (
           <div>
             <div style={{display:'flex',gap:8,marginBottom:20,flexWrap:'wrap'}}>
-              {[['transport','✈ Transport'],['depense','💸 Dépense'],['etape','📍 Étape']].map(([v,l])=>(
+              {[['transport','✈ Transport'],['depense','💸 Dépense'],['hebergement','🏨 Hébergement'],['etape','📍 Étape']].map(([v,l])=>(
                 <button key={v} onClick={()=>setAddType(v)}
                   style={{...s.tab,...(addType===v?s.tabActive:{}),borderWidth:1,borderStyle:'solid',borderColor:addType===v?'transparent':'rgba(0,0,0,0.15)'}}>
                   {l}
@@ -553,6 +640,12 @@ export default function Page() {
                   {saving?'Ajout…':'Ajouter cette dépense'}
                 </button>
               </>}
+              {addType==='hebergement' && <>
+                <HebergementForm data={formH} set={setFormH} />
+                <button style={{...s.saveBtn,width:'100%',marginTop:16,padding:13}} disabled={saving} onClick={addHebergement}>
+                  {saving?'Ajout…':'Ajouter cet hébergement'}
+                </button>
+              </>}
               {addType==='etape' && <>
                 <EtapeForm data={formE} set={setFormE} geocoding={geocoding} onGeocode={()=>handleGeocode(formE,setFormE)} />
                 <button style={{...s.saveBtn,width:'100%',marginTop:16,padding:13}} disabled={saving} onClick={addEtape}>
@@ -569,18 +662,38 @@ export default function Page() {
             {(transports.length===0&&depenses.length===0)
               ? <div style={s.empty}><div style={{fontSize:40,marginBottom:12}}>📊</div>Ajoute des entrées pour voir le résumé.</div>
               : <>
-                  <div style={s.sectionTitle}>Totaux par personne</div>
-                  <div style={s.statGrid}>
-                    {[['lois','Loïs','#fff4e6','#7a3e00'],['ines','Ines','#fce8f0','#7a1a3e']].map(([p,name,bg,color])=>(
-                      <div key={p} style={{...s.statCard,background:bg}}>
-                        <div style={{...s.statLabel,color}}>{name}</div>
-                        <div style={{...s.statValue,color,fontSize:18}}>{fmtTotals(totals[p])}</div>
+                  <div style={s.sectionTitle}>Budget & Dépenses</div>
+                  {[['lois','Loïs','#fff4e6','#7a3e00','#e8a04a'],['ines','Ines','#fce8f0','#7a1a3e','#d4729a']].map(([p,name,bg,color,accent])=>{
+                    const spent = totals[p]['€'] || 0
+                    const budget = parseFloat(budgets[p]) || 0
+                    const pct = budget > 0 ? Math.min(spent/budget*100, 100) : 0
+                    const over = budget > 0 && spent > budget
+                    return (
+                      <div key={p} style={{...s.statCard,background:bg,marginBottom:12}}>
+                        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
+                          <div style={{...s.statLabel,color,marginBottom:0}}>{name}</div>
+                          <div style={{fontSize:14,fontWeight:600,color}}>{fmtTotals(totals[p])}</div>
+                        </div>
+                        <div style={{display:'flex',alignItems:'center',gap:8}}>
+                          <div style={{flex:1,height:8,borderRadius:99,background:'rgba(0,0,0,0.08)',overflow:'hidden'}}>
+                            <div style={{height:'100%',borderRadius:99,background:over?'#d94f4f':accent,width:`${pct}%`,transition:'width 0.4s'}} />
+                          </div>
+                          <input
+                            type="number" min="0" placeholder="Budget €"
+                            value={budgets[p]}
+                            onChange={e=>saveBudget(p,e.target.value)}
+                            style={{...s.input,width:110,padding:'5px 9px',fontSize:13}}
+                          />
+                        </div>
+                        {budget>0 && <div style={{fontSize:11,color,marginTop:5,opacity:0.8}}>
+                          {over ? `⚠ Dépassement de ${(spent-budget).toFixed(2)} €` : `${(budget-spent).toFixed(2)} € restants`}
+                        </div>}
                       </div>
-                    ))}
-                    <div style={s.statCard}>
-                      <div style={s.statLabel}>Total commun</div>
-                      <div style={{...s.statValue,fontSize:18,color:'#1a6b45'}}>{fmtTotals(totals.both)}</div>
-                    </div>
+                    )
+                  })}
+                  <div style={s.statCard}>
+                    <div style={s.statLabel}>Total commun (Loïs & Ines)</div>
+                    <div style={{...s.statValue,fontSize:18,color:'#1a6b45'}}>{fmtTotals(totals.both)}</div>
                   </div>
                   <div style={s.sectionTitle}>Répartition</div>
                   <div style={s.statGrid}>
@@ -603,13 +716,13 @@ export default function Page() {
                     </div>
                   </div>
                   <div style={{display:'flex',flexDirection:'column'}}>
-                    {[...transports.map(e=>({...e,_kind:'transport'})),...depenses.map(e=>({...e,_kind:'depense'})),...etapes.map(e=>({...e,_kind:'etape'}))]
+                    {[...transports.map(e=>({...e,_kind:'transport'})),...depenses.map(e=>({...e,_kind:'depense'})),...etapes.map(e=>({...e,_kind:'etape'})),...hebergements.map(e=>({...e,_kind:'hebergement',date:e.dateArrivee}))]
                       .filter(e=>chronoFilter==='all'||(e.person||'both')===chronoFilter||(e.person||'both')==='both')
                       .sort((a,b)=>a.date<b.date?-1:1)
                       .map((e,i,arr)=>{
                         const p = e.person||'both'
-                        const icon = e._kind==='transport'?typeIcons[e.type]:e._kind==='depense'?catIcons[e.categorie||'autre']:'📍'
-                        const title = e._kind==='transport'?`${e.from} → ${e.to}`:e._kind==='depense'?e.label:e.titre
+                        const icon = e._kind==='transport'?typeIcons[e.type]:e._kind==='depense'?catIcons[e.categorie||'autre']:e._kind==='hebergement'?'🏨':'📍'
+                        const title = e._kind==='transport'?`${e.from} → ${e.to}`:e._kind==='depense'?e.label:e._kind==='hebergement'?e.nom:e.titre
                         return (
                           <div key={e._id} style={{display:'flex',gap:14}}>
                             <div style={{display:'flex',flexDirection:'column',alignItems:'center',paddingTop:2}}>
