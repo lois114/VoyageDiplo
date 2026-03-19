@@ -323,12 +323,12 @@ export default function Page() {
                       {e.price && <span style={s.priceTag}>{e.price.toFixed(2)} {e.currency||'€'}</span>}
                     </div>
                     <div style={s.details}>
-                      {e.date     && <div style={s.detail}>Date<span>{formatDate(e.date)}</span></div>}
-                      {e.timeDep  && <div style={s.detail}>Départ<span>{e.timeDep}</span></div>}
-                      {e.timeArr  && <div style={s.detail}>Arrivée<span>{e.timeArr}</span></div>}
-                      {e.terminal && <div style={s.detail}>Terminal / Voie<span>{e.terminal}</span></div>}
-                      {e.company  && <div style={s.detail}>Compagnie<span>{e.company}</span></div>}
-                      {e.booking  && <div style={s.detail}>Réservation<span>{e.booking}</span></div>}
+                      {e.date     && <div style={s.detail}>Date<span style={{display:'block'}}>{formatDate(e.date)}</span></div>}
+                      {e.timeDep  && <div style={s.detail}>Départ<span style={{display:'block'}}>{e.timeDep}</span></div>}
+                      {e.timeArr  && <div style={s.detail}>Arrivée<span style={{display:'block'}}>{e.timeArr}</span></div>}
+                      {e.terminal && <div style={s.detail}>Terminal / Voie<span style={{display:'block'}}>{e.terminal}</span></div>}
+                      {e.company  && <div style={s.detail}>Compagnie<span style={{display:'block'}}>{e.company}</span></div>}
+                      {e.booking  && <div style={s.detail}>Réservation<span style={{display:'block'}}>{e.booking}</span></div>}
                     </div>
                     {e.note && <div style={s.note}>{e.note}</div>}
                     {isEditing && (
@@ -376,7 +376,7 @@ export default function Page() {
                       {e.price && <span style={s.priceTag}>{e.price.toFixed(2)} {e.currency||'€'}</span>}
                     </div>
                     <div style={s.details}>
-                      {e.date && <div style={s.detail}>Date<span>{formatDate(e.date)}</span></div>}
+                      {e.date && <div style={s.detail}>Date<span style={{display:'block'}}>{formatDate(e.date)}</span></div>}
                     </div>
                     {e.note && <div style={s.note}>{e.note}</div>}
                     {isEditing && (
