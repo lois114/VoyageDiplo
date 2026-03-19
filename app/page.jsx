@@ -11,7 +11,7 @@ const client = createClient({
 })
 
 const QUERY_TRANSPORT = `*[_type == "transport"] | order(date asc, timeDep asc) {
-  _id, type, num, from, to, date, timeDep, timeArr,
+  _id, type, num, from, to, date, timeDep, timeArr, dateArr,
   terminal, company, booking, price, currency, person, note
 }`
 const QUERY_DEPENSE = `*[_type == "depense"] | order(date asc) {
@@ -31,7 +31,7 @@ const catIcons    = { bouffe:'🍽', activite:'🎯', hebergement:'🏨', shoppi
 const personLabel = { lois:'Loïs', ines:'Ines', both:'Loïs & Ines' }
 const personClass = { lois:'ptag_lois', ines:'ptag_ines', both:'ptag_both' }
 
-const EMPTY_T = { type:'avion', num:'', from:'', to:'', date:'', timeDep:'', timeArr:'', terminal:'', company:'', booking:'', price:'', currency:'€', person:'both', note:'' }
+const EMPTY_T = { type:'avion', num:'', from:'', to:'', date:'', timeDep:'', timeArr:'', dateArr:'', terminal:'', company:'', booking:'', price:'', currency:'€', person:'both', note:'' }
 const EMPTY_D = { categorie:'bouffe', label:'', date:'', price:'', currency:'€', person:'both', note:'' }
 const EMPTY_E = { titre:'', lieu:'', lat:'', lng:'', date:'', ordre:'', note:'', person:'both' }
 const EMPTY_H = { nom:'', lieu:'', dateArrivee:'', dateDepart:'', price:'', currency:'€', person:'both', lien:'', note:'' }
@@ -190,6 +190,9 @@ function TransportForm({ data, set }) {
       </div>
       <div style={s.row}>
         <Field label="Heure arrivée" type="time" value={data.timeArr} onChange={v=>set({...data,timeArr:v})} />
+        <Field label="Date d'arrivée" type="date" value={data.dateArr} onChange={v=>set({...data,dateArr:v})} />
+      </div>
+      <div style={s.row}>
         <Field label="Terminal / Voie" value={data.terminal} onChange={v=>set({...data,terminal:v})} placeholder="Terminal 2E…" />
       </div>
       <div style={s.sectionTitle}>Réservation</div>
@@ -497,9 +500,8 @@ export default function Page() {
                     {e.price && <span style={s.priceTag}>{e.price.toFixed(2)} {e.currency||'€'}</span>}
                   </div>
                   <div style={s.details}>
-                    {e.date     && <div style={s.detail}>Date<span style={{display:'block'}}>{formatDate(e.date)}</span></div>}
-                    {e.timeDep  && <div style={s.detail}>Départ<span style={{display:'block'}}>{e.timeDep}</span></div>}
-                    {e.timeArr  && <div style={s.detail}>Arrivée<span style={{display:'block'}}>{e.timeArr}</span></div>}
+                    {e.date     && <div style={s.detail}>Départ<span style={{display:'block'}}>{formatDate(e.date)}{e.timeDep?' · '+e.timeDep:''}</span></div>}
+                    {(e.dateArr||e.timeArr) && <div style={s.detail}>Arrivée<span style={{display:'block'}}>{e.dateArr?formatDate(e.dateArr):''}{e.timeArr?' · '+e.timeArr:''}</span></div>}
                     {e.terminal && <div style={s.detail}>Terminal / Voie<span style={{display:'block'}}>{e.terminal}</span></div>}
                     {e.company  && <div style={s.detail}>Compagnie<span style={{display:'block'}}>{e.company}</span></div>}
                     {e.booking  && <div style={s.detail}>Réservation<span style={{display:'block'}}>{e.booking}</span></div>}
@@ -716,13 +718,13 @@ export default function Page() {
                     </div>
                   </div>
                   <div style={{display:'flex',flexDirection:'column'}}>
-                    {[...transports.map(e=>({...e,_kind:'transport'})),...depenses.map(e=>({...e,_kind:'depense'})),...etapes.map(e=>({...e,_kind:'etape'})),...hebergements.map(e=>({...e,_kind:'hebergement',date:e.dateArrivee})),...hebergements.filter(e=>e.dateDepart).map(e=>({...e,_kind:'hebergement_out',date:e.dateDepart}))]
+                    {[...transports.map(e=>({...e,_kind:'transport'})),...depenses.map(e=>({...e,_kind:'depense'})),...etapes.map(e=>({...e,_kind:'etape'})),...hebergements.map(e=>({...e,_kind:'hebergement',date:e.dateArrivee})),...hebergements.filter(e=>e.dateDepart).map(e=>({...e,_kind:'hebergement_out',date:e.dateDepart})),...transports.filter(e=>e.dateArr).map(e=>({...e,_kind:'transport_arr',date:e.dateArr}))]
                       .filter(e=>chronoFilter==='all'||(e.person||'both')===chronoFilter||(e.person||'both')==='both')
                       .sort((a,b)=>a.date<b.date?-1:1)
                       .map((e,i,arr)=>{
                         const p = e.person||'both'
-                        const icon = e._kind==='transport'?typeIcons[e.type]:e._kind==='depense'?catIcons[e.categorie||'autre']:e._kind==='hebergement'?'🏨 Check-in':e._kind==='hebergement_out'?'🏨 Check-out':'📍'
-                        const title = e._kind==='transport'?`${e.from} → ${e.to}`:e._kind==='depense'?e.label:(e._kind==='hebergement'||e._kind==='hebergement_out')?e.nom:e.titre
+                        const icon = e._kind==='transport'?`${typeIcons[e.type]} Départ`:e._kind==='transport_arr'?`${typeIcons[e.type]} Arrivée`:e._kind==='depense'?catIcons[e.categorie||'autre']:e._kind==='hebergement'?'🏨 Check-in':e._kind==='hebergement_out'?'🏨 Check-out':'📍'
+                        const title = (e._kind==='transport'||e._kind==='transport_arr')?`${e.from} → ${e.to}`:e._kind==='depense'?e.label:(e._kind==='hebergement'||e._kind==='hebergement_out')?e.nom:e.titre
                         return (
                           <div key={e._id+e._kind} style={{display:'flex',gap:14}}>
                             <div style={{display:'flex',flexDirection:'column',alignItems:'center',paddingTop:2}}>
