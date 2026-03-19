@@ -308,6 +308,7 @@ export default function Page() {
   const [geocoding, setGeocoding]   = useState(false)
   const [editingId, setEditingId]   = useState(null)
   const [editKind, setEditKind]     = useState(null)
+  const [chronoFilter, setChronoFilter] = useState('all')
   const [formT, setFormT]           = useState(EMPTY_T)
   const [formD, setFormD]           = useState(EMPTY_D)
   const [formE, setFormE]           = useState(EMPTY_E)
@@ -590,9 +591,20 @@ export default function Page() {
                       return count ? <div key={cat} style={s.statCard}><div style={s.statLabel}>{catIcons[cat]} {label}</div><div style={s.statValue}>{count}</div></div> : null
                     })}
                   </div>
-                  <div style={s.sectionTitle}>Chronologie complète</div>
+                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8,marginBottom:4}}>
+                    <div style={s.sectionTitle}>Chronologie complète</div>
+                    <div style={{display:'flex',gap:6}}>
+                      {[['all','Tous'],['lois','Loïs'],['ines','Ines']].map(([f,l])=>(
+                        <button key={f} onClick={()=>setChronoFilter(f)}
+                          style={{...s.filterBtn,...(chronoFilter===f?s['filterActive_'+f]:{})}}>
+                          {l}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   <div style={{display:'flex',flexDirection:'column'}}>
                     {[...transports.map(e=>({...e,_kind:'transport'})),...depenses.map(e=>({...e,_kind:'depense'})),...etapes.map(e=>({...e,_kind:'etape'}))]
+                      .filter(e=>chronoFilter==='all'||(e.person||'both')===chronoFilter||(e.person||'both')==='both')
                       .sort((a,b)=>a.date<b.date?-1:1)
                       .map((e,i,arr)=>{
                         const p = e.person||'both'
