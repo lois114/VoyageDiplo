@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@sanity/client'
 
 const client = createClient({
@@ -14,57 +14,106 @@ const QUERY_TRANSPORT = `*[_type == "transport"] | order(date asc, timeDep asc) 
   _id, type, num, from, to, date, timeDep, timeArr,
   terminal, company, booking, price, currency, person, note
 }`
-
 const QUERY_DEPENSE = `*[_type == "depense"] | order(date asc) {
   _id, categorie, label, date, price, currency, person, note
 }`
+const QUERY_ETAPE = `*[_type == "etape"] | order(date asc, ordre asc) {
+  _id, titre, lieu, lat, lng, date, ordre, note, person
+}`
 
-const typeLabels    = { avion:'Avion', train:'Train', bus:'Bus', taxi:'Taxi', metro:'Métro', autre:'Autre' }
-const typeIcons     = { avion:'✈', train:'🚄', bus:'🚌', taxi:'🚕', metro:'🚇', autre:'🚀' }
-const catLabels     = { bouffe:'Restauration', activite:'Activité', hebergement:'Hébergement', shopping:'Shopping', autre:'Autre' }
-const catIcons      = { bouffe:'🍽', activite:'🎯', hebergement:'🏨', shopping:'🛍', autre:'📌' }
-const personLabel   = { lois:'Loïs', ines:'Ines', both:'Loïs & Ines' }
-const personClass   = { lois:'ptag_lois', ines:'ptag_ines', both:'ptag_both' }
+const typeLabels  = { avion:'Avion', train:'Train', bus:'Bus', taxi:'Taxi', metro:'Métro', autre:'Autre' }
+const typeIcons   = { avion:'✈', train:'🚄', bus:'🚌', taxi:'🚕', metro:'🚇', autre:'🚀' }
+const catLabels   = { bouffe:'Restauration', activite:'Activité', hebergement:'Hébergement', shopping:'Shopping', autre:'Autre' }
+const catIcons    = { bouffe:'🍽', activite:'🎯', hebergement:'🏨', shopping:'🛍', autre:'📌' }
+const personLabel = { lois:'Loïs', ines:'Ines', both:'Loïs & Ines' }
+const personClass = { lois:'ptag_lois', ines:'ptag_ines', both:'ptag_both' }
 
 const EMPTY_T = { type:'avion', num:'', from:'', to:'', date:'', timeDep:'', timeArr:'', terminal:'', company:'', booking:'', price:'', currency:'€', person:'both', note:'' }
 const EMPTY_D = { categorie:'bouffe', label:'', date:'', price:'', currency:'€', person:'both', note:'' }
+const EMPTY_E = { titre:'', lieu:'', lat:'', lng:'', date:'', ordre:'', note:'', person:'both' }
 
 function calcTotals(transports, depenses) {
   const result = { lois:{}, ines:{}, both:{} }
-  const add = (person, currency, amount) => {
-    if (!amount) return
-    result[person][currency] = (result[person][currency] || 0) + amount
-  }
-  ;[...transports, ...depenses].forEach(e => {
-    const p = e.person || 'both'
-    const c = e.currency || '€'
-    const v = e.price ? parseFloat(e.price) : 0
+  const add = (p, c, v) => { result[p][c] = (result[p][c]||0) + v }
+  ;[...transports,...depenses].forEach(e => {
+    const p = e.person||'both', c = e.currency||'€', v = e.price ? parseFloat(e.price) : 0
     if (!v) return
-    if (p === 'both') {
-      add('lois', c, v)
-      add('ines', c, v)
-      add('both', c, v)
-    } else {
-      add(p, c, v)
-    }
+    if (p==='both') { add('lois',c,v); add('ines',c,v); add('both',c,v) }
+    else add(p,c,v)
   })
   return result
 }
-
 function fmtTotals(obj) {
-  const entries = Object.entries(obj)
-  if (!entries.length) return '—'
-  return entries.map(([c,v]) => `${v.toFixed(2)} ${c}`).join(' + ')
+  const e = Object.entries(obj)
+  return e.length ? e.map(([c,v])=>`${v.toFixed(2)} ${c}`).join(' + ') : '—'
 }
-
 function formatDate(d) {
   if (!d) return ''
   const [y,m,day] = d.split('-')
   return `${parseInt(day)} ${['jan','fév','mar','avr','mai','juin','juil','août','sep','oct','nov','déc'][parseInt(m)-1]} ${y}`
 }
+function groupByDay(items) {
+  const map = {}
+  items.forEach(e => {
+    const k = e.date || 'sans-date'
+    if (!map[k]) map[k] = []
+    map[k].push(e)
+  })
+  return Object.entries(map).sort(([a],[b]) => a<b?-1:1)
+}
 
-// ── Sub-components ──────────────────────────────────────────────────────────
+async function geocode(lieu) {
+  try {
+    const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(lieu)}&format=json&limit=1`)
+    const d = await r.json()
+    if (d.length) return { lat: parseFloat(d[0].lat), lng: parseFloat(d[0].lon) }
+  } catch(e) {}
+  return null
+}
 
+// ── Map (Leaflet + OSM) ──────────────────────────────────────────────────────
+function RoadmapMap({ etapes }) {
+  const mapRef = useRef(null)
+  const instanceRef = useRef(null)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const valid = etapes.filter(e => e.lat && e.lng)
+    if (!valid.length) return
+
+    import('leaflet').then(L => {
+      if (!mapRef.current) return
+      delete L.Icon.Default.prototype._getIconUrl
+      L.Icon.Default.mergeOptions({
+        iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
+        iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
+        shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+      })
+      if (instanceRef.current) { instanceRef.current.remove(); instanceRef.current = null }
+      const map = L.map(mapRef.current, { zoomControl: true, scrollWheelZoom: false })
+      instanceRef.current = map
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(map)
+      const bounds = []
+      valid.forEach(e => {
+        L.marker([e.lat, e.lng]).addTo(map)
+          .bindPopup(`<b>${e.titre}</b><br>${e.lieu}${e.date?'<br>'+formatDate(e.date):''}`)
+        bounds.push([e.lat, e.lng])
+      })
+      if (bounds.length > 1) L.polyline(bounds, { color:'#2a5c45', weight:2, dashArray:'6,6', opacity:0.7 }).addTo(map)
+      map.fitBounds(bounds, { padding:[40,40] })
+    })
+    return () => { if (instanceRef.current) { instanceRef.current.remove(); instanceRef.current = null } }
+  }, [etapes])
+
+  return (
+    <>
+      <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+      <div ref={mapRef} style={{ height:340, borderRadius:14, overflow:'hidden', borderWidth:1, borderStyle:'solid', borderColor:'rgba(0,0,0,0.08)', marginTop:28 }} />
+    </>
+  )
+}
+
+// ── Field / sub-components ───────────────────────────────────────────────────
 function Field({ label, type='text', value, onChange, placeholder='', children }) {
   return (
     <div style={s.fg}>
@@ -73,28 +122,43 @@ function Field({ label, type='text', value, onChange, placeholder='', children }
     </div>
   )
 }
-
 function PersonToggle({ value, onChange }) {
   return (
     <div style={{display:'flex',gap:6}}>
       {[['both','Loïs & Ines'],['lois','Loïs'],['ines','Ines']].map(([v,l])=>(
         <button key={v} type="button" onClick={()=>onChange(v)}
-          style={{...s.personBtn, ...(value===v ? s['personSel_'+v] : {})}}>
+          style={{...s.personBtn,...(value===v?s['personSel_'+v]:{})}}>
           {l}
         </button>
       ))}
     </div>
   )
 }
-
 function PriceRow({ data, set }) {
   return (
     <div style={{display:'flex',gap:8}}>
-      <input style={{...s.input,flex:1}} type="number" min="0" step="0.01"
-        value={data.price} onChange={e=>set({...data,price:e.target.value})} placeholder="0.00" />
+      <input style={{...s.input,flex:1}} type="number" min="0" step="0.01" value={data.price} onChange={e=>set({...data,price:e.target.value})} placeholder="0.00" />
       <select style={{...s.input,width:75}} value={data.currency} onChange={e=>set({...data,currency:e.target.value})}>
         {['€','$','£','CHF','¥'].map(c=><option key={c}>{c}</option>)}
       </select>
+    </div>
+  )
+}
+function PersonTagEl({ person }) {
+  const p = person||'both'
+  return <span style={{...s.personTag,...s[personClass[p]]}}>{personLabel[p]}</span>
+}
+function FilterBar({ filter, setFilter, onRefresh }) {
+  return (
+    <div style={s.filterBar}>
+      <span style={{fontSize:13,color:'#6b6b67'}}>Afficher :</span>
+      {[['all','Tous'],['lois','Loïs'],['ines','Ines']].map(([f,l])=>(
+        <button key={f} onClick={()=>setFilter(f)}
+          style={{...s.filterBtn,...(filter===f?s['filterActive_'+f]:{})}}>
+          {l}
+        </button>
+      ))}
+      <button onClick={onRefresh} style={{...s.filterBtn,marginLeft:'auto'}}>↻ Actualiser</button>
     </div>
   )
 }
@@ -104,7 +168,7 @@ function TransportForm({ data, set }) {
     <div>
       <div style={s.sectionTitle}>Transport</div>
       <div style={s.row}>
-        <Field label="Type" value={data.type} onChange={v=>set({...data,type:v})}>
+        <Field label="Type">
           <select style={s.input} value={data.type} onChange={e=>set({...data,type:e.target.value})}>
             {Object.entries(typeLabels).map(([v,l])=><option key={v} value={v}>{typeIcons[v]} {l}</option>)}
           </select>
@@ -135,9 +199,7 @@ function TransportForm({ data, set }) {
         <Field label="Concerne"><PersonToggle value={data.person} onChange={v=>set({...data,person:v})} /></Field>
       </div>
       <div style={s.sectionTitle}>Notes</div>
-      <textarea style={{...s.input,minHeight:70,resize:'vertical',width:'100%'}}
-        value={data.note} onChange={e=>set({...data,note:e.target.value})}
-        placeholder="Bagage inclus, siège 14A…" />
+      <textarea style={{...s.input,minHeight:70,resize:'vertical',width:'100%'}} value={data.note} onChange={e=>set({...data,note:e.target.value})} placeholder="Bagage inclus, siège 14A…" />
     </div>
   )
 }
@@ -147,12 +209,12 @@ function DepenseForm({ data, set }) {
     <div>
       <div style={s.sectionTitle}>Dépense</div>
       <div style={s.row}>
-        <Field label="Catégorie" value={data.categorie} onChange={v=>set({...data,categorie:v})}>
+        <Field label="Catégorie">
           <select style={s.input} value={data.categorie} onChange={e=>set({...data,categorie:e.target.value})}>
             {Object.entries(catLabels).map(([v,l])=><option key={v} value={v}>{catIcons[v]} {l}</option>)}
           </select>
         </Field>
-        <Field label="Description" value={data.label} onChange={v=>set({...data,label:v})} placeholder="Ex: Dîner au restaurant…" />
+        <Field label="Description" value={data.label} onChange={v=>set({...data,label:v})} placeholder="Dîner au restaurant…" />
       </div>
       <div style={s.row}>
         <Field label="Date" type="date" value={data.date} onChange={v=>set({...data,date:v})} />
@@ -162,71 +224,92 @@ function DepenseForm({ data, set }) {
       <Field label="Concerne"><PersonToggle value={data.person} onChange={v=>set({...data,person:v})} /></Field>
       <div style={{marginTop:12}}>
         <div style={s.sectionTitle}>Notes</div>
-        <textarea style={{...s.input,minHeight:60,resize:'vertical',width:'100%'}}
-          value={data.note} onChange={e=>set({...data,note:e.target.value})}
-          placeholder="Détails…" />
+        <textarea style={{...s.input,minHeight:60,resize:'vertical',width:'100%'}} value={data.note} onChange={e=>set({...data,note:e.target.value})} placeholder="Détails…" />
       </div>
     </div>
   )
 }
 
-function FilterBar({ filter, setFilter, onRefresh }) {
+function EtapeForm({ data, set, geocoding, onGeocode }) {
   return (
-    <div style={s.filterBar}>
-      <span style={{fontSize:13,color:'#6b6b67'}}>Afficher :</span>
-      {[['all','Tous'],['lois','Loïs'],['ines','Ines']].map(([f,l])=>(
-        <button key={f} onClick={()=>setFilter(f)}
-          style={{...s.filterBtn, ...(filter===f ? s['filterActive_'+f] : {})}}>
-          {l}
-        </button>
-      ))}
-      <button onClick={onRefresh} style={{...s.filterBtn,marginLeft:'auto'}}>↻ Actualiser</button>
+    <div>
+      <div style={s.sectionTitle}>Étape</div>
+      <div style={s.row}>
+        <Field label="Titre" value={data.titre} onChange={v=>set({...data,titre:v})} placeholder="Arrivée à Barcelone, Visite Sagrada…" />
+        <Field label="Date" type="date" value={data.date} onChange={v=>set({...data,date:v})} />
+      </div>
+      <div style={s.sectionTitle}>Lieu (pour la carte)</div>
+      <div style={s.fg}>
+        <label style={s.label}>Ville / Adresse</label>
+        <div style={{display:'flex',gap:8}}>
+          <input style={{...s.input,flex:1}} type="text" value={data.lieu}
+            onChange={e=>set({...data,lieu:e.target.value})} placeholder="Barcelone, Espagne" />
+          <button type="button" onClick={onGeocode} disabled={geocoding||!data.lieu}
+            style={{...s.saveBtn,padding:'9px 14px',flexShrink:0,opacity:geocoding||!data.lieu?0.5:1}}>
+            {geocoding?'…':'📍 Localiser'}
+          </button>
+        </div>
+      </div>
+      <div style={s.row}>
+        <Field label="Latitude (auto)" value={data.lat} onChange={v=>set({...data,lat:v})} placeholder="41.38" />
+        <Field label="Longitude (auto)" value={data.lng} onChange={v=>set({...data,lng:v})} placeholder="2.17" />
+      </div>
+      <div style={s.sectionTitle}>Voyageur & Ordre</div>
+      <div style={s.row}>
+        <Field label="Concerne"><PersonToggle value={data.person} onChange={v=>set({...data,person:v})} /></Field>
+        <Field label="Ordre dans la journée" type="number" value={data.ordre} onChange={v=>set({...data,ordre:v})} placeholder="1" />
+      </div>
+      <div style={s.sectionTitle}>Notes</div>
+      <textarea style={{...s.input,minHeight:70,resize:'vertical',width:'100%'}} value={data.note} onChange={e=>set({...data,note:e.target.value})} placeholder="Adresse précise, horaires, infos pratiques…" />
     </div>
   )
 }
 
-function PersonTagEl({ person }) {
-  const p = person || 'both'
-  return <span style={{...s.personTag,...s[personClass[p]]}}>{personLabel[p]}</span>
-}
-
-// ── Main component ───────────────────────────────────────────────────────────
-
+// ── Main ──────────────────────────────────────────────────────────────────────
 export default function Page() {
-  const [transports, setTransports]   = useState([])
-  const [depenses, setDepenses]       = useState([])
-  const [tab, setTab]                 = useState('transports')
-  const [addType, setAddType]         = useState('transport')
-  const [filter, setFilter]           = useState('all')
-  const [loading, setLoading]         = useState(true)
-  const [saving, setSaving]           = useState(false)
-  const [editingId, setEditingId]     = useState(null)
-  const [editKind, setEditKind]       = useState(null)
-  const [formT, setFormT]             = useState(EMPTY_T)
-  const [formD, setFormD]             = useState(EMPTY_D)
-  const [editForm, setEditForm]       = useState({})
+  const [transports, setTransports] = useState([])
+  const [depenses, setDepenses]     = useState([])
+  const [etapes, setEtapes]         = useState([])
+  const [tab, setTab]               = useState('transports')
+  const [addType, setAddType]       = useState('transport')
+  const [filter, setFilter]         = useState('all')
+  const [loading, setLoading]       = useState(true)
+  const [saving, setSaving]         = useState(false)
+  const [geocoding, setGeocoding]   = useState(false)
+  const [editingId, setEditingId]   = useState(null)
+  const [editKind, setEditKind]     = useState(null)
+  const [formT, setFormT]           = useState(EMPTY_T)
+  const [formD, setFormD]           = useState(EMPTY_D)
+  const [formE, setFormE]           = useState(EMPTY_E)
+  const [editForm, setEditForm]     = useState({})
 
   useEffect(()=>{ fetchAll() },[])
 
   async function fetchAll() {
     setLoading(true)
     try {
-      const [t, d] = await Promise.all([client.fetch(QUERY_TRANSPORT), client.fetch(QUERY_DEPENSE)])
-      setTransports(t)
-      setDepenses(d)
-    } catch(e) { console.error(e) }
+      const [t,d,e] = await Promise.all([client.fetch(QUERY_TRANSPORT), client.fetch(QUERY_DEPENSE), client.fetch(QUERY_ETAPE)])
+      setTransports(t); setDepenses(d); setEtapes(e)
+    } catch(e){ console.error(e) }
     setLoading(false)
   }
 
+  async function handleGeocode(data, set) {
+    if (!data.lieu) return
+    setGeocoding(true)
+    const coords = await geocode(data.lieu)
+    if (coords) set({...data, lat: coords.lat.toString(), lng: coords.lng.toString()})
+    else alert('Lieu introuvable, essaie une autre formulation.')
+    setGeocoding(false)
+  }
+
   async function addTransport() {
-    if (!formT.from || !formT.to) return alert('Merci d\'indiquer le départ et l\'arrivée.')
+    if (!formT.from||!formT.to) return alert('Merci d\'indiquer le départ et l\'arrivée.')
     setSaving(true)
     try {
-      await client.create({ _type:'transport', ...formT, price: formT.price ? parseFloat(formT.price) : undefined })
-      setFormT(EMPTY_T)
-      await fetchAll()
-      setTab('transports')
-    } catch(e) { alert('Erreur lors de la sauvegarde.') }
+      await client.create({_type:'transport',...formT,price:formT.price?parseFloat(formT.price):undefined})
+      setFormT(EMPTY_T); await fetchAll(); setTab('transports')
+    } catch(e){ alert('Erreur lors de la sauvegarde.') }
     setSaving(false)
   }
 
@@ -234,49 +317,89 @@ export default function Page() {
     if (!formD.label) return alert('Merci d\'indiquer une description.')
     setSaving(true)
     try {
-      await client.create({ _type:'depense', ...formD, price: formD.price ? parseFloat(formD.price) : undefined })
-      setFormD(EMPTY_D)
-      await fetchAll()
-      setTab('depenses')
-    } catch(e) { alert('Erreur lors de la sauvegarde.') }
+      await client.create({_type:'depense',...formD,price:formD.price?parseFloat(formD.price):undefined})
+      setFormD(EMPTY_D); await fetchAll(); setTab('depenses')
+    } catch(e){ alert('Erreur lors de la sauvegarde.') }
+    setSaving(false)
+  }
+
+  async function addEtape() {
+    if (!formE.titre) return alert('Merci d\'indiquer un titre.')
+    setSaving(true)
+    try {
+      await client.create({
+        _type:'etape',...formE,
+        lat: formE.lat ? parseFloat(formE.lat) : undefined,
+        lng: formE.lng ? parseFloat(formE.lng) : undefined,
+        ordre: formE.ordre ? parseInt(formE.ordre) : undefined,
+      })
+      setFormE(EMPTY_E); await fetchAll(); setTab('roadmap')
+    } catch(e){ alert('Erreur lors de la sauvegarde.') }
     setSaving(false)
   }
 
   async function saveEdit(id) {
     setSaving(true)
     try {
-      const data = { ...editForm }
-      delete data._id
+      const data = {...editForm}; delete data._id
       if (data.price) data.price = parseFloat(data.price)
+      if (data.lat) data.lat = parseFloat(data.lat)
+      if (data.lng) data.lng = parseFloat(data.lng)
+      if (data.ordre) data.ordre = parseInt(data.ordre)
       await client.patch(id).set(data).commit()
-      setEditingId(null)
-      await fetchAll()
-    } catch(e) { alert('Erreur lors de la sauvegarde.') }
+      setEditingId(null); await fetchAll()
+    } catch(e){ alert('Erreur lors de la sauvegarde.') }
     setSaving(false)
   }
 
   async function deleteEntry(id) {
     if (!confirm('Supprimer ?')) return
-    await client.delete(id)
-    fetchAll()
+    await client.delete(id); fetchAll()
   }
 
-  function startEdit(e, kind) {
-    setEditingId(e._id)
-    setEditKind(kind)
-    setEditForm({ ...e })
-  }
+  function startEdit(e, kind) { setEditingId(e._id); setEditKind(kind); setEditForm({...e}) }
 
-  const filteredT = transports.filter(e => filter==='all' || e.person===filter || e.person==='both')
-  const filteredD = depenses.filter(e => filter==='all' || e.person===filter || e.person==='both')
-  const totals = calcTotals(transports, depenses)
+  const filteredT  = transports.filter(e=>filter==='all'||e.person===filter||e.person==='both')
+  const filteredD  = depenses.filter(e=>filter==='all'||e.person===filter||e.person==='both')
+  const totals     = calcTotals(transports, depenses)
+  const dayGroups  = groupByDay(etapes)
 
-  const tabs = [
-    ['transports', '✈ Transports'],
-    ['depenses',   '💸 Dépenses'],
-    ['ajouter',    '+ Ajouter'],
-    ['resume',     'Résumé'],
+  const allTabs = [
+    ['transports','✈ Transports'],
+    ['depenses','💸 Dépenses'],
+    ['roadmap','🗺 Roadmap'],
+    ['ajouter','+ Ajouter'],
+    ['resume','Résumé'],
   ]
+
+  function EditSection({ e, kind }) {
+    if (editingId!==e._id) return null
+    return (
+      <div style={{marginTop:16,paddingTop:16,borderTopWidth:1,borderTopStyle:'solid',borderTopColor:'#e8e6e0'}}>
+        {kind==='transport' && <TransportForm data={editForm} set={setEditForm} />}
+        {kind==='depense'   && <DepenseForm data={editForm} set={setEditForm} />}
+        {kind==='etape'     && <EtapeForm data={editForm} set={setEditForm} geocoding={geocoding} onGeocode={()=>handleGeocode(editForm,setEditForm)} />}
+        <div style={{display:'flex',gap:8,marginTop:12}}>
+          <button style={s.cancelBtn} onClick={()=>setEditingId(null)}>Annuler</button>
+          <button style={s.saveBtn} disabled={saving} onClick={()=>saveEdit(e._id)}>
+            {saving?'Enregistrement…':'Enregistrer'}
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  function CardActions({ e, kind }) {
+    const isEditing = editingId===e._id
+    return (
+      <div style={s.cardActions}>
+        <button style={s.iconBtn} onClick={()=>isEditing?setEditingId(null):startEdit(e,kind)}>
+          {isEditing?'✕ Fermer':'✏️ Modifier'}
+        </button>
+        <button style={s.iconBtn} onClick={()=>deleteEntry(e._id)}>✕</button>
+      </div>
+    )
+  }
 
   return (
     <div style={s.page}>
@@ -284,7 +407,7 @@ export default function Page() {
         <div style={s.headerInner}>
           <div style={s.logo}>✈ carnet <span style={{color:'#2a5c45'}}>voyage</span></div>
           <div style={s.tabs}>
-            {tabs.map(([id,label])=>(
+            {allTabs.map(([id,label])=>(
               <button key={id} onClick={()=>setTab(id)}
                 style={{...s.tab,...(tab===id?s.tabActive:{})}}>
                 {label}
@@ -296,79 +419,51 @@ export default function Page() {
 
       <main style={s.main}>
 
-        {/* ── TRANSPORTS ── */}
+        {/* TRANSPORTS */}
         {tab==='transports' && (
           <div>
             <FilterBar filter={filter} setFilter={setFilter} onRefresh={fetchAll} />
             {loading && <div style={s.empty}>Chargement…</div>}
-            {!loading && filteredT.length===0 && (
-              <div style={s.empty}><div style={{fontSize:40,marginBottom:12}}>🧳</div>Aucun transport ajouté.</div>
-            )}
+            {!loading && filteredT.length===0 && <div style={s.empty}><div style={{fontSize:40,marginBottom:12}}>🧳</div>Aucun transport.</div>}
             <div style={{display:'flex',flexDirection:'column',gap:12}}>
-              {filteredT.map(e=>{
-                const isEditing = editingId===e._id
-                return (
-                  <div key={e._id} style={{...s.card,...(isEditing?{borderColor:'#2a5c45',borderWidth:2,borderStyle:'solid'}:{})}}>
-                    <div style={s.cardActions}>
-                      <button style={s.iconBtn} onClick={()=>isEditing?setEditingId(null):startEdit(e,'transport')}>
-                        {isEditing?'✕ Fermer':'✏️ Modifier'}
-                      </button>
-                      <button style={{...s.iconBtn}} onClick={()=>deleteEntry(e._id)}>✕</button>
-                    </div>
-                    <div style={s.cardHeader}>
-                      <span style={{...s.typeBadge,...s['badge_'+e.type]}}>{typeIcons[e.type]} {typeLabels[e.type]}</span>
-                      {e.num && <span style={{fontSize:13,color:'#6b6b67'}}>{e.num}</span>}
-                      <span style={s.route}>{e.from} → {e.to}</span>
-                      <PersonTagEl person={e.person} />
-                      {e.price && <span style={s.priceTag}>{e.price.toFixed(2)} {e.currency||'€'}</span>}
-                    </div>
-                    <div style={s.details}>
-                      {e.date     && <div style={s.detail}>Date<span style={{display:'block'}}>{formatDate(e.date)}</span></div>}
-                      {e.timeDep  && <div style={s.detail}>Départ<span style={{display:'block'}}>{e.timeDep}</span></div>}
-                      {e.timeArr  && <div style={s.detail}>Arrivée<span style={{display:'block'}}>{e.timeArr}</span></div>}
-                      {e.terminal && <div style={s.detail}>Terminal / Voie<span style={{display:'block'}}>{e.terminal}</span></div>}
-                      {e.company  && <div style={s.detail}>Compagnie<span style={{display:'block'}}>{e.company}</span></div>}
-                      {e.booking  && <div style={s.detail}>Réservation<span style={{display:'block'}}>{e.booking}</span></div>}
-                    </div>
-                    {e.note && <div style={s.note}>{e.note}</div>}
-                    {isEditing && (
-                      <div style={{marginTop:16,paddingTop:16,borderTopWidth:1,borderTopStyle:'solid',borderTopColor:'#e8e6e0'}}>
-                        <TransportForm data={editForm} set={setEditForm} />
-                        <div style={{display:'flex',gap:8,marginTop:12}}>
-                          <button style={s.cancelBtn} onClick={()=>setEditingId(null)}>Annuler</button>
-                          <button style={s.saveBtn} disabled={saving} onClick={()=>saveEdit(e._id)}>
-                            {saving?'Enregistrement…':'Enregistrer'}
-                          </button>
-                        </div>
-                      </div>
-                    )}
+              {filteredT.map(e=>(
+                <div key={e._id} style={{...s.card,...(editingId===e._id?{borderColor:'#2a5c45',borderWidth:2,borderStyle:'solid'}:{})}}>
+                  <CardActions e={e} kind="transport" />
+                  <div style={s.cardHeader}>
+                    <span style={{...s.typeBadge,...s['badge_'+e.type]}}>{typeIcons[e.type]} {typeLabels[e.type]}</span>
+                    {e.num && <span style={{fontSize:13,color:'#6b6b67'}}>{e.num}</span>}
+                    <span style={s.route}>{e.from} → {e.to}</span>
+                    <PersonTagEl person={e.person} />
+                    {e.price && <span style={s.priceTag}>{e.price.toFixed(2)} {e.currency||'€'}</span>}
                   </div>
-                )
-              })}
+                  <div style={s.details}>
+                    {e.date     && <div style={s.detail}>Date<span style={{display:'block'}}>{formatDate(e.date)}</span></div>}
+                    {e.timeDep  && <div style={s.detail}>Départ<span style={{display:'block'}}>{e.timeDep}</span></div>}
+                    {e.timeArr  && <div style={s.detail}>Arrivée<span style={{display:'block'}}>{e.timeArr}</span></div>}
+                    {e.terminal && <div style={s.detail}>Terminal / Voie<span style={{display:'block'}}>{e.terminal}</span></div>}
+                    {e.company  && <div style={s.detail}>Compagnie<span style={{display:'block'}}>{e.company}</span></div>}
+                    {e.booking  && <div style={s.detail}>Réservation<span style={{display:'block'}}>{e.booking}</span></div>}
+                  </div>
+                  {e.note && <div style={s.note}>{e.note}</div>}
+                  <EditSection e={e} kind="transport" />
+                </div>
+              ))}
             </div>
           </div>
         )}
 
-        {/* ── DÉPENSES ── */}
+        {/* DÉPENSES */}
         {tab==='depenses' && (
           <div>
             <FilterBar filter={filter} setFilter={setFilter} onRefresh={fetchAll} />
             {loading && <div style={s.empty}>Chargement…</div>}
-            {!loading && filteredD.length===0 && (
-              <div style={s.empty}><div style={{fontSize:40,marginBottom:12}}>💸</div>Aucune dépense ajoutée.</div>
-            )}
+            {!loading && filteredD.length===0 && <div style={s.empty}><div style={{fontSize:40,marginBottom:12}}>💸</div>Aucune dépense.</div>}
             <div style={{display:'flex',flexDirection:'column',gap:12}}>
               {filteredD.map(e=>{
-                const isEditing = editingId===e._id
                 const cat = e.categorie||'autre'
                 return (
-                  <div key={e._id} style={{...s.card,...(isEditing?{borderColor:'#2a5c45',borderWidth:2,borderStyle:'solid'}:{})}}>
-                    <div style={s.cardActions}>
-                      <button style={s.iconBtn} onClick={()=>isEditing?setEditingId(null):startEdit(e,'depense')}>
-                        {isEditing?'✕ Fermer':'✏️ Modifier'}
-                      </button>
-                      <button style={{...s.iconBtn}} onClick={()=>deleteEntry(e._id)}>✕</button>
-                    </div>
+                  <div key={e._id} style={{...s.card,...(editingId===e._id?{borderColor:'#2a5c45',borderWidth:2,borderStyle:'solid'}:{})}}>
+                    <CardActions e={e} kind="depense" />
                     <div style={s.cardHeader}>
                       <span style={{...s.typeBadge,...s['badge_cat_'+cat]}}>{catIcons[cat]} {catLabels[cat]}</span>
                       <span style={s.route}>{e.label||'—'}</span>
@@ -379,17 +474,7 @@ export default function Page() {
                       {e.date && <div style={s.detail}>Date<span style={{display:'block'}}>{formatDate(e.date)}</span></div>}
                     </div>
                     {e.note && <div style={s.note}>{e.note}</div>}
-                    {isEditing && (
-                      <div style={{marginTop:16,paddingTop:16,borderTopWidth:1,borderTopStyle:'solid',borderTopColor:'#e8e6e0'}}>
-                        <DepenseForm data={editForm} set={setEditForm} />
-                        <div style={{display:'flex',gap:8,marginTop:12}}>
-                          <button style={s.cancelBtn} onClick={()=>setEditingId(null)}>Annuler</button>
-                          <button style={s.saveBtn} disabled={saving} onClick={()=>saveEdit(e._id)}>
-                            {saving?'Enregistrement…':'Enregistrer'}
-                          </button>
-                        </div>
-                      </div>
-                    )}
+                    <EditSection e={e} kind="depense" />
                   </div>
                 )
               })}
@@ -397,11 +482,53 @@ export default function Page() {
           </div>
         )}
 
-        {/* ── AJOUTER ── */}
+        {/* ROADMAP */}
+        {tab==='roadmap' && (
+          <div>
+            {loading && <div style={s.empty}>Chargement…</div>}
+            {!loading && etapes.length===0 && (
+              <div style={s.empty}>
+                <div style={{fontSize:40,marginBottom:12}}>🗺</div>
+                Aucune étape planifiée.<br />Clique sur "+ Ajouter" → Étape pour commencer.
+              </div>
+            )}
+            {dayGroups.map(([date, items]) => (
+              <div key={date} style={{marginBottom:28}}>
+                <div style={s.dayHeader}>
+                  <div style={s.dayDot} />
+                  <span>{date==='sans-date' ? 'Sans date' : formatDate(date)}</span>
+                </div>
+                <div style={{display:'flex',flexDirection:'column',gap:10,paddingLeft:20,borderLeftWidth:2,borderLeftStyle:'solid',borderLeftColor:'#e0ddd6',marginLeft:5}}>
+                  {items.sort((a,b)=>(a.ordre||0)-(b.ordre||0)).map(e=>(
+                    <div key={e._id} style={{...s.card,...(editingId===e._id?{borderColor:'#2a5c45',borderWidth:2,borderStyle:'solid'}:{})}}>
+                      <CardActions e={e} kind="etape" />
+                      <div style={s.cardHeader}>
+                        <span style={{...s.typeBadge,background:'#e6fbe8',color:'#0a4a1a'}}>📍 Étape</span>
+                        <span style={s.route}>{e.titre}</span>
+                        <PersonTagEl person={e.person} />
+                      </div>
+                      {e.lieu && (
+                        <div style={{fontSize:13,color:'#6b6b67',marginBottom:6}}>
+                          📌 {e.lieu}
+                          {e.lat && e.lng && <span style={{fontSize:11,color:'#a8a8a4',marginLeft:8}}>{parseFloat(e.lat).toFixed(4)}, {parseFloat(e.lng).toFixed(4)}</span>}
+                        </div>
+                      )}
+                      {e.note && <div style={s.note}>{e.note}</div>}
+                      <EditSection e={e} kind="etape" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+            {etapes.some(e=>e.lat&&e.lng) && <RoadmapMap etapes={etapes} />}
+          </div>
+        )}
+
+        {/* AJOUTER */}
         {tab==='ajouter' && (
           <div>
-            <div style={{display:'flex',gap:8,marginBottom:20}}>
-              {[['transport','✈ Transport'],['depense','💸 Dépense']].map(([v,l])=>(
+            <div style={{display:'flex',gap:8,marginBottom:20,flexWrap:'wrap'}}>
+              {[['transport','✈ Transport'],['depense','💸 Dépense'],['etape','📍 Étape']].map(([v,l])=>(
                 <button key={v} onClick={()=>setAddType(v)}
                   style={{...s.tab,...(addType===v?s.tabActive:{}),borderWidth:1,borderStyle:'solid',borderColor:addType===v?'transparent':'rgba(0,0,0,0.15)'}}>
                   {l}
@@ -409,27 +536,34 @@ export default function Page() {
               ))}
             </div>
             <div style={s.card}>
-              {addType==='transport'
-                ? <><TransportForm data={formT} set={setFormT} />
-                    <button style={{...s.saveBtn,width:'100%',marginTop:16,padding:13}} disabled={saving} onClick={addTransport}>
-                      {saving?'Ajout…':'Ajouter ce transport'}
-                    </button></>
-                : <><DepenseForm data={formD} set={setFormD} />
-                    <button style={{...s.saveBtn,width:'100%',marginTop:16,padding:13}} disabled={saving} onClick={addDepense}>
-                      {saving?'Ajout…':'Ajouter cette dépense'}
-                    </button></>
-              }
+              {addType==='transport' && <>
+                <TransportForm data={formT} set={setFormT} />
+                <button style={{...s.saveBtn,width:'100%',marginTop:16,padding:13}} disabled={saving} onClick={addTransport}>
+                  {saving?'Ajout…':'Ajouter ce transport'}
+                </button>
+              </>}
+              {addType==='depense' && <>
+                <DepenseForm data={formD} set={setFormD} />
+                <button style={{...s.saveBtn,width:'100%',marginTop:16,padding:13}} disabled={saving} onClick={addDepense}>
+                  {saving?'Ajout…':'Ajouter cette dépense'}
+                </button>
+              </>}
+              {addType==='etape' && <>
+                <EtapeForm data={formE} set={setFormE} geocoding={geocoding} onGeocode={()=>handleGeocode(formE,setFormE)} />
+                <button style={{...s.saveBtn,width:'100%',marginTop:16,padding:13}} disabled={saving} onClick={addEtape}>
+                  {saving?'Ajout…':'Ajouter cette étape'}
+                </button>
+              </>}
             </div>
           </div>
         )}
 
-        {/* ── RÉSUMÉ ── */}
+        {/* RÉSUMÉ */}
         {tab==='resume' && (
           <div>
-            {(transports.length===0 && depenses.length===0)
+            {(transports.length===0&&depenses.length===0)
               ? <div style={s.empty}><div style={{fontSize:40,marginBottom:12}}>📊</div>Ajoute des entrées pour voir le résumé.</div>
               : <>
-                  {/* Totaux par personne */}
                   <div style={s.sectionTitle}>Totaux par personne</div>
                   <div style={s.statGrid}>
                     {[['lois','Loïs','#fff4e6','#7a3e00'],['ines','Ines','#fce8f0','#7a1a3e']].map(([p,name,bg,color])=>(
@@ -443,40 +577,28 @@ export default function Page() {
                       <div style={{...s.statValue,fontSize:18,color:'#1a6b45'}}>{fmtTotals(totals.both)}</div>
                     </div>
                   </div>
-
-                  {/* Répartition par catégorie */}
                   <div style={s.sectionTitle}>Répartition</div>
                   <div style={s.statGrid}>
-                    <div style={s.statCard}>
-                      <div style={s.statLabel}>Transports</div>
-                      <div style={s.statValue}>{transports.length}</div>
-                    </div>
+                    <div style={s.statCard}><div style={s.statLabel}>Transports</div><div style={s.statValue}>{transports.length}</div></div>
+                    <div style={s.statCard}><div style={s.statLabel}>Étapes</div><div style={s.statValue}>{etapes.length}</div></div>
                     {Object.entries(catLabels).map(([cat,label])=>{
                       const count = depenses.filter(d=>d.categorie===cat).length
-                      if (!count) return null
-                      return (
-                        <div key={cat} style={s.statCard}>
-                          <div style={s.statLabel}>{catIcons[cat]} {label}</div>
-                          <div style={s.statValue}>{count}</div>
-                        </div>
-                      )
+                      return count ? <div key={cat} style={s.statCard}><div style={s.statLabel}>{catIcons[cat]} {label}</div><div style={s.statValue}>{count}</div></div> : null
                     })}
                   </div>
-
-                  {/* Timeline */}
-                  <div style={s.sectionTitle}>Chronologie</div>
+                  <div style={s.sectionTitle}>Chronologie complète</div>
                   <div style={{display:'flex',flexDirection:'column'}}>
-                    {[...transports.map(e=>({...e,_kind:'transport'})), ...depenses.map(e=>({...e,_kind:'depense'}))]
+                    {[...transports.map(e=>({...e,_kind:'transport'})),...depenses.map(e=>({...e,_kind:'depense'})),...etapes.map(e=>({...e,_kind:'etape'}))]
                       .sort((a,b)=>a.date<b.date?-1:1)
                       .map((e,i,arr)=>{
                         const p = e.person||'both'
-                        const icon = e._kind==='transport' ? typeIcons[e.type] : catIcons[e.categorie||'autre']
-                        const title = e._kind==='transport' ? `${e.from} → ${e.to}` : e.label
+                        const icon = e._kind==='transport'?typeIcons[e.type]:e._kind==='depense'?catIcons[e.categorie||'autre']:'📍'
+                        const title = e._kind==='transport'?`${e.from} → ${e.to}`:e._kind==='depense'?e.label:e.titre
                         return (
                           <div key={e._id} style={{display:'flex',gap:14}}>
                             <div style={{display:'flex',flexDirection:'column',alignItems:'center',paddingTop:2}}>
                               <div style={{width:12,height:12,borderRadius:'50%',background:'#2a5c45',flexShrink:0}} />
-                              {i<arr.length-1 && <div style={{width:2,background:'#e0ddd6',flex:1,minHeight:24,margin:'4px 0'}} />}
+                              {i<arr.length-1&&<div style={{width:2,background:'#e0ddd6',flex:1,minHeight:24,margin:'4px 0'}} />}
                             </div>
                             <div style={{paddingBottom:20,flex:1}}>
                               <div style={{fontSize:12,color:'#a8a8a4'}}>{formatDate(e.date)}</div>
@@ -484,18 +606,16 @@ export default function Page() {
                                 {icon} {title}
                                 <span style={{...s.personTag,...s[personClass[p]],fontSize:11,padding:'2px 8px'}}>{personLabel[p]}</span>
                               </div>
-                              {e.price && <div style={{fontSize:13,color:'#1a6b45',fontWeight:500,marginTop:2}}>{e.price.toFixed(2)} {e.currency||'€'}</div>}
+                              {e.price&&<div style={{fontSize:13,color:'#1a6b45',fontWeight:500,marginTop:2}}>{e.price.toFixed(2)} {e.currency||'€'}</div>}
                             </div>
                           </div>
                         )
-                      })
-                    }
+                      })}
                   </div>
                 </>
             }
           </div>
         )}
-
       </main>
     </div>
   )
@@ -504,7 +624,7 @@ export default function Page() {
 const s = {
   page: { fontFamily:"'DM Sans',sans-serif", background:'#f7f5f0', minHeight:'100vh', color:'#1a1a18' },
   header: { background:'#fff', borderBottomWidth:1, borderBottomStyle:'solid', borderBottomColor:'rgba(0,0,0,0.08)', position:'sticky', top:0, zIndex:100 },
-  headerInner: { maxWidth:860, margin:'0 auto', display:'flex', alignItems:'center', justifyContent:'space-between', height:60, padding:'0 24px', gap:16, flexWrap:'wrap' },
+  headerInner: { maxWidth:860, margin:'0 auto', display:'flex', alignItems:'center', justifyContent:'space-between', minHeight:60, padding:'8px 24px', gap:12, flexWrap:'wrap' },
   logo: { fontFamily:'Syne,sans-serif', fontSize:18, fontWeight:700, letterSpacing:'-0.3px' },
   tabs: { display:'flex', gap:4, flexWrap:'wrap' },
   tab: { padding:'6px 14px', borderRadius:20, borderWidth:0, borderStyle:'solid', borderColor:'transparent', background:'transparent', color:'#6b6b67', fontSize:14, cursor:'pointer', fontFamily:"'DM Sans',sans-serif" },
@@ -556,4 +676,6 @@ const s = {
   statLabel: { fontSize:12, color:'#a8a8a4', textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:6 },
   statValue: { fontFamily:'Syne,sans-serif', fontSize:26, fontWeight:700 },
   empty: { textAlign:'center', padding:'60px 24px', color:'#a8a8a4', fontSize:15 },
+  dayHeader: { display:'flex', alignItems:'center', gap:10, marginBottom:12, fontFamily:'Syne,sans-serif', fontWeight:700, fontSize:16 },
+  dayDot: { width:14, height:14, borderRadius:'50%', background:'#2a5c45', flexShrink:0 },
 }
