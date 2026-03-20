@@ -23,6 +23,9 @@ const QUERY_ETAPE = `*[_type == "etape"] | order(date asc, ordre asc) {
 const QUERY_HEBERGEMENT = `*[_type == "hebergement"] | order(dateArrivee asc) {
   _id, nom, lieu, dateArrivee, dateDepart, prix, currency, person, pays, lien, note
 }`
+const QUERY_TODO = `*[_type == "todo"] | order(_createdAt asc) {
+  _id, label, categorie, person, pays, date, note, done
+}`
 
 const typeLabels  = { avion:'Avion', train:'Train', bus:'Bus', taxi:'Taxi', metro:'Métro', autre:'Autre' }
 const typeIcons   = { avion:'✈', train:'🚄', bus:'🚌', taxi:'🚕', metro:'🚇', autre:'🚀' }
@@ -461,8 +464,6 @@ export default function Page() {
   useEffect(() => {
     const saved = localStorage.getItem('voyage_budgets')
     if (saved) setBudgets(JSON.parse(saved))
-    const savedTodos = localStorage.getItem('voyage_todos')
-    if (savedTodos) setTodos(JSON.parse(savedTodos))
   }, [])
 
   useEffect(()=>{ fetchAll() },[])
@@ -470,8 +471,8 @@ export default function Page() {
   async function fetchAll() {
     setLoading(true)
     try {
-      const [t,d,e,h] = await Promise.all([client.fetch(QUERY_TRANSPORT), client.fetch(QUERY_DEPENSE), client.fetch(QUERY_ETAPE), client.fetch(QUERY_HEBERGEMENT)])
-      setTransports(t); setDepenses(d); setEtapes(e); setHebergements(h)
+      const [t,d,e,h,td] = await Promise.all([client.fetch(QUERY_TRANSPORT), client.fetch(QUERY_DEPENSE), client.fetch(QUERY_ETAPE), client.fetch(QUERY_HEBERGEMENT), client.fetch(QUERY_TODO)])
+      setTransports(t); setDepenses(d); setEtapes(e); setHebergements(h); setTodos(td)
     } catch(e){ console.error(e) }
     setLoading(false)
   }
@@ -482,25 +483,25 @@ export default function Page() {
     localStorage.setItem('voyage_budgets', JSON.stringify(updated))
   }
 
-  function saveTodos(list) {
-    setTodos(list)
-    localStorage.setItem('voyage_todos', JSON.stringify(list))
-  }
-
-  function addTodo() {
+  async function addTodo() {
     if (!formTodo.label.trim()) return alert('Merci d\'indiquer une tâche.')
-    const newTodo = { ...formTodo, id: Date.now().toString(), done: false }
-    saveTodos([...todos, newTodo])
-    setFormTodo(EMPTY_TODO)
-    setTab('todo')
+    setSaving(true)
+    try {
+      await client.create({ _type:'todo', ...formTodo, done: false })
+      setFormTodo(EMPTY_TODO); await fetchAll(); setTab('todo')
+    } catch(e){ alert('Erreur lors de la sauvegarde.') }
+    setSaving(false)
   }
 
-  function toggleTodo(id) {
-    saveTodos(todos.map(t => t.id===id ? {...t, done: !t.done} : t))
+  async function toggleTodo(id, currentDone) {
+    try {
+      await client.patch(id).set({ done: !currentDone }).commit()
+      setTodos(todos.map(t => t._id===id ? {...t, done: !currentDone} : t))
+    } catch(e){ console.error(e) }
   }
 
-  function deleteTodo(id) {
-    saveTodos(todos.filter(t => t.id!==id))
+  async function deleteTodo(id) {
+    await client.delete(id); fetchAll()
   }
 
   async function handleGeocode(data, set) {
@@ -767,7 +768,7 @@ export default function Page() {
                 {todos.filter(t=>!t.done).length} à faire · {todos.filter(t=>t.done).length} fait{todos.filter(t=>t.done).length>1?'s':''}
               </div>
               {todos.filter(t=>t.done).length>0 && (
-                <button onClick={()=>saveTodos(todos.filter(t=>!t.done))} style={{...s.cancelBtn,fontSize:13,padding:'6px 14px'}}>
+                <button onClick={async ()=>{ await Promise.all(todos.filter(t=>t.done).map(t=>client.delete(t._id))); fetchAll() }} style={{...s.cancelBtn,fontSize:13,padding:'6px 14px'}}>
                   Effacer les tâches finies
                 </button>
               )}
@@ -790,8 +791,8 @@ export default function Page() {
                   </div>
                   <div style={{display:'flex',flexDirection:'column',gap:8}}>
                     {[...pending, ...done].map(t=>(
-                      <div key={t.id} style={{...s.card,padding:'12px 16px',opacity:t.done?0.55:1,display:'flex',alignItems:'flex-start',gap:12}}>
-                        <button onClick={()=>toggleTodo(t.id)} style={{width:22,height:22,borderRadius:6,borderWidth:2,borderStyle:'solid',borderColor:t.done?'#2a5c45':'rgba(0,0,0,0.2)',background:t.done?'#2a5c45':'transparent',cursor:'pointer',flexShrink:0,marginTop:1,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,color:'#fff'}}>
+                      <div key={t._id} style={{...s.card,padding:'12px 16px',opacity:t.done?0.55:1,display:'flex',alignItems:'flex-start',gap:12}}>
+                        <button onClick={()=>toggleTodo(t._id, t.done)} style={{width:22,height:22,borderRadius:6,borderWidth:2,borderStyle:'solid',borderColor:t.done?'#2a5c45':'rgba(0,0,0,0.2)',background:t.done?'#2a5c45':'transparent',cursor:'pointer',flexShrink:0,marginTop:1,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,color:'#fff'}}>
                           {t.done?'✓':''}
                         </button>
                         <div style={{flex:1,minWidth:0}}>
@@ -807,7 +808,7 @@ export default function Page() {
                             </div>
                           )}
                         </div>
-                        <button onClick={()=>deleteTodo(t.id)} style={{...s.iconBtn,padding:'3px 8px',fontSize:12,flexShrink:0}}>✕</button>
+                        <button onClick={()=>deleteTodo(t._id)} style={{...s.iconBtn,padding:'3px 8px',fontSize:12,flexShrink:0}}>✕</button>
                       </div>
                     ))}
                   </div>
