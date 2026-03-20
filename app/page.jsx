@@ -12,16 +12,16 @@ const client = createClient({
 
 const QUERY_TRANSPORT = `*[_type == "transport"] | order(date asc, timeDep asc) {
   _id, type, num, from, to, date, timeDep, timeArr, dateArr,
-  terminal, company, booking, price, currency, person, note
+  terminal, company, booking, price, currency, person, pays, note
 }`
 const QUERY_DEPENSE = `*[_type == "depense"] | order(date asc) {
-  _id, categorie, label, date, price, currency, person, lien, note
+  _id, categorie, label, date, price, currency, person, pays, lien, note
 }`
 const QUERY_ETAPE = `*[_type == "etape"] | order(date asc, ordre asc) {
-  _id, titre, lieu, lat, lng, date, ordre, note, person
+  _id, titre, lieu, lat, lng, date, ordre, note, person, pays
 }`
 const QUERY_HEBERGEMENT = `*[_type == "hebergement"] | order(dateArrivee asc) {
-  _id, nom, lieu, dateArrivee, dateDepart, prix, currency, person, lien, note
+  _id, nom, lieu, dateArrivee, dateDepart, prix, currency, person, pays, lien, note
 }`
 
 const typeLabels  = { avion:'Avion', train:'Train', bus:'Bus', taxi:'Taxi', metro:'Métro', autre:'Autre' }
@@ -31,13 +31,22 @@ const catIcons    = { bouffe:'🍽', activite:'🎯', hebergement:'🏨', shoppi
 const personLabel = { lois:'Loïs', ines:'Ines', both:'Loïs & Ines' }
 const personClass = { lois:'ptag_lois', ines:'ptag_ines', both:'ptag_both' }
 
-const EMPTY_T = { type:'avion', num:'', from:'', to:'', date:'', timeDep:'', timeArr:'', dateArr:'', terminal:'', company:'', booking:'', price:'', currency:'€', person:'both', note:'' }
-const EMPTY_D = { categorie:'bouffe', label:'', date:'', price:'', currency:'€', person:'both', lien:'', note:'' }
-const EMPTY_E = { titre:'', lieu:'', lat:'', lng:'', date:'', ordre:'', note:'', person:'both' }
-const EMPTY_H = { nom:'', lieu:'', dateArrivee:'', dateDepart:'', price:'', currency:'€', person:'both', lien:'', note:'' }
+const paysOptions = [
+  ['argentine','🇦🇷 Argentine'],
+  ['perou','🇵🇪 Pérou'],
+  ['bolivie','🇧🇴 Bolivie'],
+  ['canada','🇨🇦 Canada'],
+  ['usa','🇺🇸 États-Unis'],
+]
+const paysLabel = Object.fromEntries(paysOptions)
+
+const EMPTY_T = { type:'avion', num:'', from:'', to:'', date:'', timeDep:'', timeArr:'', dateArr:'', terminal:'', company:'', booking:'', price:'', currency:'€', person:'both', pays:'', note:'' }
+const EMPTY_D = { categorie:'bouffe', label:'', date:'', price:'', currency:'€', person:'both', pays:'', lien:'', note:'' }
+const EMPTY_E = { titre:'', lieu:'', lat:'', lng:'', date:'', ordre:'', note:'', person:'both', pays:'' }
+const EMPTY_H = { nom:'', lieu:'', dateArrivee:'', dateDepart:'', price:'', currency:'€', person:'both', pays:'', lien:'', note:'' }
 
 const todoCategories = { transport:'✈ Transport', hebergement:'🏨 Hébergement', activite:'🎯 Activité', visa:'📄 Visa / Docs', shopping:'🛍 Shopping', autre:'📌 Autre' }
-const EMPTY_TODO = { label:'', categorie:'transport', person:'both', date:'', note:'' }
+const EMPTY_TODO = { label:'', categorie:'transport', person:'both', pays:'', date:'', note:'' }
 
 function calcTotals(transports, depenses, hebergements=[]) {
   const result = { lois:{}, ines:{}, both:{} }
@@ -217,6 +226,35 @@ function FilterBar({ filter, setFilter, onRefresh }) {
     </div>
   )
 }
+function CountryBar({ paysFilter, setPaysFilter }) {
+  return (
+    <div style={{...s.filterBar,marginTop:-10,marginBottom:16,paddingBottom:12,borderBottomWidth:1,borderBottomStyle:'solid',borderBottomColor:'rgba(0,0,0,0.06)'}}>
+      <span style={{fontSize:13,color:'#6b6b67'}}>Pays :</span>
+      <button onClick={()=>setPaysFilter('all')}
+        style={{...s.filterBtn,...(paysFilter==='all'?s.filterActive_all:{})}}>
+        🌍 Tous
+      </button>
+      {paysOptions.map(([v,l])=>(
+        <button key={v} onClick={()=>setPaysFilter(v)}
+          style={{...s.filterBtn,...(paysFilter===v?{background:'#2a5c45',color:'#fff',borderColor:'#2a5c45'}:{})}}>
+          {l}
+        </button>
+      ))}
+    </div>
+  )
+}
+function PaysSelect({ value, onChange }) {
+  return (
+    <select style={s.input} value={value} onChange={e=>onChange(e.target.value)}>
+      <option value=''>— Pays (optionnel)</option>
+      {paysOptions.map(([v,l])=><option key={v} value={v}>{l}</option>)}
+    </select>
+  )
+}
+function PaysTagEl({ pays }) {
+  if (!pays) return null
+  return <span style={s.paysTag}>{paysLabel[pays]||pays}</span>
+}
 
 function TransportForm({ data, set }) {
   return (
@@ -256,6 +294,9 @@ function TransportForm({ data, set }) {
         <Field label="Prix"><PriceRow data={data} set={set} /></Field>
         <Field label="Concerne"><PersonToggle value={data.person} onChange={v=>set({...data,person:v})} /></Field>
       </div>
+      <div style={s.row}>
+        <Field label="Pays"><PaysSelect value={data.pays||''} onChange={v=>set({...data,pays:v})} /></Field>
+      </div>
       <div style={s.sectionTitle}>Notes</div>
       <textarea style={{...s.input,minHeight:70,resize:'vertical',width:'100%'}} value={data.note} onChange={e=>set({...data,note:e.target.value})} placeholder="Bagage inclus, siège 14A…" />
     </div>
@@ -278,8 +319,11 @@ function DepenseForm({ data, set }) {
         <Field label="Date" type="date" value={data.date} onChange={v=>set({...data,date:v})} />
         <Field label="Prix"><PriceRow data={data} set={set} /></Field>
       </div>
-      <div style={s.sectionTitle}>Voyageur</div>
-      <Field label="Concerne"><PersonToggle value={data.person} onChange={v=>set({...data,person:v})} /></Field>
+      <div style={s.sectionTitle}>Voyageur & Pays</div>
+      <div style={s.row}>
+        <Field label="Concerne"><PersonToggle value={data.person} onChange={v=>set({...data,person:v})} /></Field>
+        <Field label="Pays"><PaysSelect value={data.pays||''} onChange={v=>set({...data,pays:v})} /></Field>
+      </div>
       <div style={{marginTop:12}}>
         <div style={s.sectionTitle}>Lien utile</div>
         <Field label="URL" value={data.lien} onChange={v=>set({...data,lien:v})} placeholder="https://…" />
@@ -321,6 +365,9 @@ function EtapeForm({ data, set, geocoding, onGeocode }) {
         <Field label="Concerne"><PersonToggle value={data.person} onChange={v=>set({...data,person:v})} /></Field>
         <Field label="Ordre dans la journée" type="number" value={data.ordre} onChange={v=>set({...data,ordre:v})} placeholder="1" />
       </div>
+      <div style={s.row}>
+        <Field label="Pays"><PaysSelect value={data.pays||''} onChange={v=>set({...data,pays:v})} /></Field>
+      </div>
       <div style={s.sectionTitle}>Notes</div>
       <textarea style={{...s.input,minHeight:70,resize:'vertical',width:'100%'}} value={data.note} onChange={e=>set({...data,note:e.target.value})} placeholder="Adresse précise, horaires, infos pratiques…" />
     </div>
@@ -343,6 +390,9 @@ function HebergementForm({ data, set }) {
       <div style={s.row}>
         <Field label="Prix total"><PriceRow data={data} set={set} /></Field>
         <Field label="Concerne"><PersonToggle value={data.person} onChange={v=>set({...data,person:v})} /></Field>
+      </div>
+      <div style={s.row}>
+        <Field label="Pays"><PaysSelect value={data.pays||''} onChange={v=>set({...data,pays:v})} /></Field>
       </div>
       <div style={s.sectionTitle}>Lien de réservation</div>
       <Field label="URL" value={data.lien} onChange={v=>set({...data,lien:v})} placeholder="https://…" />
@@ -392,6 +442,7 @@ export default function Page() {
   const [tab, setTab]               = useState('transports')
   const [addType, setAddType]       = useState('transport')
   const [filter, setFilter]         = useState('all')
+  const [paysFilter, setPaysFilter] = useState('all')
   const [loading, setLoading]       = useState(true)
   const [saving, setSaving]         = useState(false)
   const [geocoding, setGeocoding]   = useState(false)
@@ -406,7 +457,6 @@ export default function Page() {
   const [budgets, setBudgets]       = useState({ lois:'', ines:'' })
   const [todos, setTodos]           = useState([])
   const [formTodo, setFormTodo]     = useState(EMPTY_TODO)
-  const [showTodoForm, setShowTodoForm] = useState(false)
 
   useEffect(() => {
     const saved = localStorage.getItem('voyage_budgets')
@@ -442,7 +492,7 @@ export default function Page() {
     const newTodo = { ...formTodo, id: Date.now().toString(), done: false }
     saveTodos([...todos, newTodo])
     setFormTodo(EMPTY_TODO)
-    setShowTodoForm(false)
+    setTab('todo')
   }
 
   function toggleTodo(id) {
@@ -528,8 +578,9 @@ export default function Page() {
 
   function startEdit(e, kind) { setEditingId(e._id); setEditKind(kind); setEditForm({...e}) }
 
-  const filteredT  = transports.filter(e=>filter==='all'||e.person===filter||e.person==='both')
-  const filteredD  = depenses.filter(e=>filter==='all'||e.person===filter||e.person==='both')
+  const byPays = e => paysFilter==='all' || !e.pays || e.pays===paysFilter
+  const filteredT  = transports.filter(e=>(filter==='all'||e.person===filter||e.person==='both') && byPays(e))
+  const filteredD  = depenses.filter(e=>(filter==='all'||e.person===filter||e.person==='both') && byPays(e))
   const totals     = calcTotals(transports, depenses, hebergements)
   const dayGroups  = groupByDay(etapes)
 
@@ -550,7 +601,7 @@ export default function Page() {
     <div style={s.page}>
       <header style={s.header}>
         <div style={s.headerInner} className="header-inner">
-          <div style={s.logo} className="app-logo">✈ carnet <span style={{color:'#2a5c45'}}>voyage</span></div>
+          <div style={s.logo} className="app-logo">🦕 carnet <span style={{color:'#2a5c45'}}>voyage</span></div>
           <div style={s.tabs} className="nav-tabs">
             {allTabs.map(([id,label])=>(
               <button key={id} onClick={()=>setTab(id)}
@@ -568,6 +619,7 @@ export default function Page() {
         {tab==='transports' && (
           <div>
             <FilterBar filter={filter} setFilter={setFilter} onRefresh={fetchAll} />
+            <CountryBar paysFilter={paysFilter} setPaysFilter={setPaysFilter} />
             {loading && <div style={s.empty}>Chargement…</div>}
             {!loading && filteredT.length===0 && <div style={s.empty}><div style={{fontSize:40,marginBottom:12}}>🧳</div>Aucun transport.</div>}
             <div style={{display:'flex',flexDirection:'column',gap:12}}>
@@ -579,6 +631,7 @@ export default function Page() {
                     {e.num && <span style={{fontSize:13,color:'#6b6b67'}}>{e.num}</span>}
                     <span style={s.route}>{e.from} → {e.to}</span>
                     <PersonTagEl person={e.person} />
+                    <PaysTagEl pays={e.pays} />
                     {e.price && <span style={s.priceTag}>{e.price.toFixed(2)} {e.currency||'€'}</span>}
                   </div>
                   <div style={s.details}>
@@ -600,6 +653,7 @@ export default function Page() {
         {tab==='depenses' && (
           <div>
             <FilterBar filter={filter} setFilter={setFilter} onRefresh={fetchAll} />
+            <CountryBar paysFilter={paysFilter} setPaysFilter={setPaysFilter} />
             {loading && <div style={s.empty}>Chargement…</div>}
             {!loading && filteredD.length===0 && <div style={s.empty}><div style={{fontSize:40,marginBottom:12}}>💸</div>Aucune dépense.</div>}
             <div style={{display:'flex',flexDirection:'column',gap:12}}>
@@ -612,6 +666,7 @@ export default function Page() {
                       <span style={{...s.typeBadge,...s['badge_cat_'+cat]}}>{catIcons[cat]} {catLabels[cat]}</span>
                       <span style={s.route}>{e.label||'—'}</span>
                       <PersonTagEl person={e.person} />
+                      <PaysTagEl pays={e.pays} />
                       {e.price && <span style={s.priceTag}>{e.price.toFixed(2)} {e.currency||'€'}</span>}
                     </div>
                     <div style={s.details}>
@@ -631,18 +686,20 @@ export default function Page() {
         {tab==='hebergements' && (
           <div>
             <FilterBar filter={filter} setFilter={setFilter} onRefresh={fetchAll} />
+            <CountryBar paysFilter={paysFilter} setPaysFilter={setPaysFilter} />
             {loading && <div style={s.empty}>Chargement…</div>}
-            {!loading && hebergements.filter(e=>filter==='all'||e.person===filter||e.person==='both').length===0 && (
+            {!loading && hebergements.filter(e=>(filter==='all'||e.person===filter||e.person==='both')&&byPays(e)).length===0 && (
               <div style={s.empty}><div style={{fontSize:40,marginBottom:12}}>🏨</div>Aucun hébergement.</div>
             )}
             <div style={{display:'flex',flexDirection:'column',gap:12}}>
-              {hebergements.filter(e=>filter==='all'||e.person===filter||e.person==='both').map(e=>(
+              {hebergements.filter(e=>(filter==='all'||e.person===filter||e.person==='both')&&byPays(e)).map(e=>(
                 <div key={e._id} style={{...s.card,...(editingId===e._id?{borderColor:'#2a5c45',borderWidth:2,borderStyle:'solid'}:{})}}>
                   <CardActions e={e} kind="hebergement" {...cardActionsProps} />
                   <div style={s.cardHeader} className="card-header">
                     <span style={{...s.typeBadge,background:'#e6fbe8',color:'#0a4a1a'}}>🏨 Hébergement</span>
                     <span style={s.route}>{e.nom||'—'}</span>
                     <PersonTagEl person={e.person} />
+                    <PaysTagEl pays={e.pays} />
                     {e.price && <span style={s.priceTag}>{e.price.toFixed(2)} {e.currency||'€'}</span>}
                   </div>
                   <div style={s.details}>
@@ -683,6 +740,7 @@ export default function Page() {
                         <span style={{...s.typeBadge,background:'#e6fbe8',color:'#0a4a1a'}}>📍 Étape</span>
                         <span style={s.route}>{e.titre}</span>
                         <PersonTagEl person={e.person} />
+                        <PaysTagEl pays={e.pays} />
                       </div>
                       {e.lieu && (
                         <div style={{fontSize:13,color:'#6b6b67',marginBottom:6}}>
@@ -708,41 +766,14 @@ export default function Page() {
               <div style={{fontSize:13,color:'#6b6b67'}}>
                 {todos.filter(t=>!t.done).length} à faire · {todos.filter(t=>t.done).length} fait{todos.filter(t=>t.done).length>1?'s':''}
               </div>
-              <div style={{display:'flex',gap:8}}>
-                {todos.filter(t=>t.done).length>0 && (
-                  <button onClick={()=>saveTodos(todos.filter(t=>!t.done))} style={{...s.cancelBtn,fontSize:13,padding:'6px 14px'}}>
-                    Effacer les tâches finies
-                  </button>
-                )}
-                <button onClick={()=>setShowTodoForm(v=>!v)} style={{...s.saveBtn,padding:'6px 16px',fontSize:13}}>
-                  {showTodoForm ? '✕ Annuler' : '+ Ajouter'}
+              {todos.filter(t=>t.done).length>0 && (
+                <button onClick={()=>saveTodos(todos.filter(t=>!t.done))} style={{...s.cancelBtn,fontSize:13,padding:'6px 14px'}}>
+                  Effacer les tâches finies
                 </button>
-              </div>
+              )}
             </div>
 
-            {showTodoForm && (
-              <div style={{...s.card,marginBottom:20}}>
-                <div style={s.sectionTitle}>Nouvelle tâche</div>
-                <div style={s.row}>
-                  <Field label="Tâche" value={formTodo.label} onChange={v=>setFormTodo({...formTodo,label:v})} placeholder="Réserver le vol Paris-Tokyo…" />
-                  <Field label="Catégorie">
-                    <select style={s.input} value={formTodo.categorie} onChange={e=>setFormTodo({...formTodo,categorie:e.target.value})}>
-                      {Object.entries(todoCategories).map(([v,l])=><option key={v} value={v}>{l}</option>)}
-                    </select>
-                  </Field>
-                </div>
-                <div style={s.row}>
-                  <Field label="Échéance (optionnel)" type="date" value={formTodo.date} onChange={v=>setFormTodo({...formTodo,date:v})} />
-                  <Field label="Concerne"><PersonToggle value={formTodo.person} onChange={v=>setFormTodo({...formTodo,person:v})} /></Field>
-                </div>
-                <Field label="Note (optionnel)" value={formTodo.note} onChange={v=>setFormTodo({...formTodo,note:v})} placeholder="Détails, lien…" />
-                <button style={{...s.saveBtn,width:'100%',marginTop:14,padding:12}} onClick={addTodo}>
-                  Ajouter la tâche
-                </button>
-              </div>
-            )}
-
-            {todos.length===0 && !showTodoForm && (
+            {todos.length===0 && (
               <div style={s.empty}><div style={{fontSize:40,marginBottom:12}}>✅</div>Aucune tâche pour l'instant.</div>
             )}
 
@@ -767,6 +798,7 @@ export default function Page() {
                           <div style={{fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:15,textDecoration:t.done?'line-through':'none',color:t.done?'#a8a8a4':'#1a1a18',display:'flex',flexWrap:'wrap',alignItems:'center',gap:8}}>
                             {t.label}
                             <PersonTagEl person={t.person} />
+                            <PaysTagEl pays={t.pays} />
                           </div>
                           {(t.date||t.note) && (
                             <div style={{fontSize:12,color:'#a8a8a4',marginTop:4,display:'flex',gap:10,flexWrap:'wrap'}}>
@@ -789,7 +821,7 @@ export default function Page() {
         {tab==='ajouter' && (
           <div>
             <div style={{display:'flex',gap:8,marginBottom:20,flexWrap:'wrap'}}>
-              {[['transport','✈ Transport'],['depense','💸 Dépense'],['hebergement','🏨 Hébergement'],['etape','📍 Étape']].map(([v,l])=>(
+              {[['transport','✈ Transport'],['depense','💸 Dépense'],['hebergement','🏨 Hébergement'],['etape','📍 Étape'],['todo','✅ Tâche']].map(([v,l])=>(
                 <button key={v} onClick={()=>setAddType(v)}
                   style={{...s.tab,...(addType===v?s.tabActive:{}),borderWidth:1,borderStyle:'solid',borderColor:addType===v?'transparent':'rgba(0,0,0,0.15)'}}>
                   {l}
@@ -819,6 +851,27 @@ export default function Page() {
                 <EtapeForm data={formE} set={setFormE} geocoding={geocoding} onGeocode={()=>handleGeocode(formE,setFormE)} />
                 <button style={{...s.saveBtn,width:'100%',marginTop:16,padding:13}} disabled={saving} onClick={addEtape}>
                   {saving?'Ajout…':'Ajouter cette étape'}
+                </button>
+              </>}
+              {addType==='todo' && <>
+                <div style={s.row}>
+                  <Field label="Tâche" value={formTodo.label} onChange={v=>setFormTodo({...formTodo,label:v})} placeholder="Réserver le vol Paris-Tokyo…" />
+                  <Field label="Catégorie">
+                    <select style={s.input} value={formTodo.categorie} onChange={e=>setFormTodo({...formTodo,categorie:e.target.value})}>
+                      {Object.entries(todoCategories).map(([v,l])=><option key={v} value={v}>{l}</option>)}
+                    </select>
+                  </Field>
+                </div>
+                <div style={s.row}>
+                  <Field label="Échéance (optionnel)" type="date" value={formTodo.date} onChange={v=>setFormTodo({...formTodo,date:v})} />
+                  <Field label="Concerne"><PersonToggle value={formTodo.person} onChange={v=>setFormTodo({...formTodo,person:v})} /></Field>
+                </div>
+                <div style={s.row}>
+                  <Field label="Pays"><PaysSelect value={formTodo.pays||''} onChange={v=>setFormTodo({...formTodo,pays:v})} /></Field>
+                </div>
+                <Field label="Note (optionnel)" value={formTodo.note} onChange={v=>setFormTodo({...formTodo,note:v})} placeholder="Détails, lien…" />
+                <button style={{...s.saveBtn,width:'100%',marginTop:16,padding:13}} onClick={addTodo}>
+                  Ajouter la tâche
                 </button>
               </>}
             </div>
@@ -964,6 +1017,7 @@ const s = {
   ptag_ines: { background:'#fce8f0', color:'#7a1a3e' },
   ptag_both: { background:'#edf0fb', color:'#2a3580' },
   priceTag: { fontSize:13, fontWeight:500, color:'#1a6b45', background:'#e8f5ed', padding:'3px 10px', borderRadius:20 },
+  paysTag: { fontSize:11, fontWeight:500, padding:'3px 9px', borderRadius:20, background:'#f0f0ea', color:'#5a5a50', border:'1px solid rgba(0,0,0,0.1)' },
   details: { display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(130px,1fr))', gap:8 },
   detail: { fontSize:12, color:'#a8a8a4', textTransform:'uppercase', letterSpacing:'0.5px', display:'block' },
   note: { fontSize:13, color:'#6b6b67', marginTop:12, paddingTop:12, borderTopWidth:1, borderTopStyle:'solid', borderTopColor:'rgba(0,0,0,0.08)', fontStyle:'italic' },
