@@ -260,7 +260,7 @@ function PaysTagEl({ pays }) {
   return <span style={s.paysTag}>{paysLabel[pays]||pays}</span>
 }
 
-function TransportForm({ data, set }) {
+function TransportForm({ data, set, showPays }) {
   return (
     <div>
       <div style={s.sectionTitle}>Transport</div>
@@ -298,16 +298,14 @@ function TransportForm({ data, set }) {
         <Field label="Prix"><PriceRow data={data} set={set} /></Field>
         <Field label="Concerne"><PersonToggle value={data.person} onChange={v=>set({...data,person:v})} /></Field>
       </div>
-      <div style={s.row}>
-        <Field label="Pays"><PaysSelect value={data.pays||''} onChange={v=>set({...data,pays:v})} /></Field>
-      </div>
+      {showPays && <div style={s.row}><Field label="Pays"><PaysSelect value={data.pays||''} onChange={v=>set({...data,pays:v})} /></Field></div>}
       <div style={s.sectionTitle}>Notes</div>
       <textarea style={{...s.input,minHeight:70,resize:'vertical',width:'100%'}} value={data.note} onChange={e=>set({...data,note:e.target.value})} placeholder="Bagage inclus, siège 14A…" />
     </div>
   )
 }
 
-function DepenseForm({ data, set }) {
+function DepenseForm({ data, set, showPays }) {
   return (
     <div>
       <div style={s.sectionTitle}>Dépense</div>
@@ -323,10 +321,10 @@ function DepenseForm({ data, set }) {
         <Field label="Date" type="date" value={data.date} onChange={v=>set({...data,date:v})} />
         <Field label="Prix"><PriceRow data={data} set={set} /></Field>
       </div>
-      <div style={s.sectionTitle}>Voyageur & Pays</div>
+      <div style={s.sectionTitle}>{showPays ? 'Voyageur & Pays' : 'Voyageur'}</div>
       <div style={s.row}>
         <Field label="Concerne"><PersonToggle value={data.person} onChange={v=>set({...data,person:v})} /></Field>
-        <Field label="Pays"><PaysSelect value={data.pays||''} onChange={v=>set({...data,pays:v})} /></Field>
+        {showPays && <Field label="Pays"><PaysSelect value={data.pays||''} onChange={v=>set({...data,pays:v})} /></Field>}
       </div>
       <div style={{marginTop:12}}>
         <div style={s.sectionTitle}>Lien utile</div>
@@ -340,7 +338,7 @@ function DepenseForm({ data, set }) {
   )
 }
 
-function EtapeForm({ data, set, geocoding, onGeocode }) {
+function EtapeForm({ data, set, geocoding, onGeocode, showPays }) {
   return (
     <div>
       <div style={s.sectionTitle}>Étape</div>
@@ -369,16 +367,14 @@ function EtapeForm({ data, set, geocoding, onGeocode }) {
         <Field label="Concerne"><PersonToggle value={data.person} onChange={v=>set({...data,person:v})} /></Field>
         <Field label="Ordre dans la journée" type="number" value={data.ordre} onChange={v=>set({...data,ordre:v})} placeholder="1" />
       </div>
-      <div style={s.row}>
-        <Field label="Pays"><PaysSelect value={data.pays||''} onChange={v=>set({...data,pays:v})} /></Field>
-      </div>
+      {showPays && <div style={s.row}><Field label="Pays"><PaysSelect value={data.pays||''} onChange={v=>set({...data,pays:v})} /></Field></div>}
       <div style={s.sectionTitle}>Notes</div>
       <textarea style={{...s.input,minHeight:70,resize:'vertical',width:'100%'}} value={data.note} onChange={e=>set({...data,note:e.target.value})} placeholder="Adresse précise, horaires, infos pratiques…" />
     </div>
   )
 }
 
-function HebergementForm({ data, set }) {
+function HebergementForm({ data, set, showPays }) {
   return (
     <div>
       <div style={s.sectionTitle}>Hébergement</div>
@@ -395,9 +391,7 @@ function HebergementForm({ data, set }) {
         <Field label="Prix total"><PriceRow data={data} set={set} /></Field>
         <Field label="Concerne"><PersonToggle value={data.person} onChange={v=>set({...data,person:v})} /></Field>
       </div>
-      <div style={s.row}>
-        <Field label="Pays"><PaysSelect value={data.pays||''} onChange={v=>set({...data,pays:v})} /></Field>
-      </div>
+      {showPays && <div style={s.row}><Field label="Pays"><PaysSelect value={data.pays||''} onChange={v=>set({...data,pays:v})} /></Field></div>}
       <div style={s.sectionTitle}>Lien de réservation</div>
       <Field label="URL" value={data.lien} onChange={v=>set({...data,lien:v})} placeholder="https://…" />
       <div style={s.sectionTitle}>Notes</div>
@@ -407,14 +401,14 @@ function HebergementForm({ data, set }) {
 }
 
 // ── Edit / Card sub-components ────────────────────────────────────────────────
-function EditSection({ e, kind, editingId, editForm, setEditForm, geocoding, handleGeocode, saving, setEditingId, saveEdit }) {
+function EditSection({ e, kind, editingId, editForm, setEditForm, geocoding, handleGeocode, saving, setEditingId, saveEdit, showPays }) {
   if (editingId!==e._id) return null
   return (
     <div style={{marginTop:16,paddingTop:16,borderTopWidth:1,borderTopStyle:'solid',borderTopColor:'#e8e6e0'}}>
-      {kind==='transport'    && <TransportForm data={editForm} set={setEditForm} />}
-      {kind==='depense'      && <DepenseForm data={editForm} set={setEditForm} />}
-      {kind==='etape'        && <EtapeForm data={editForm} set={setEditForm} geocoding={geocoding} onGeocode={()=>handleGeocode(editForm,setEditForm)} />}
-      {kind==='hebergement'  && <HebergementForm data={editForm} set={setEditForm} />}
+      {kind==='transport'    && <TransportForm data={editForm} set={setEditForm} showPays={showPays} />}
+      {kind==='depense'      && <DepenseForm data={editForm} set={setEditForm} showPays={showPays} />}
+      {kind==='etape'        && <EtapeForm data={editForm} set={setEditForm} geocoding={geocoding} onGeocode={()=>handleGeocode(editForm,setEditForm)} showPays={showPays} />}
+      {kind==='hebergement'  && <HebergementForm data={editForm} set={setEditForm} showPays={showPays} />}
       <div style={{display:'flex',gap:8,marginTop:12}}>
         <button style={s.cancelBtn} onClick={()=>setEditingId(null)}>Annuler</button>
         <button style={s.saveBtn} disabled={saving} onClick={()=>saveEdit(e._id)}>
@@ -613,6 +607,7 @@ export default function Page() {
   const filteredD  = depenses.filter(e=>(filter==='all'||e.person===filter||e.person==='both') && byPays(e))
   const totals     = calcTotals(transports, depenses, hebergements)
   const dayGroups  = groupByDay(etapes)
+  const showPays   = voyageId === 'voyage-amerique-sud-2026'
 
   const allTabs = [
     ['transports','✈ Transports'],
@@ -624,7 +619,7 @@ export default function Page() {
     ['resume','Résumé'],
   ]
 
-  const editSectionProps = { editingId, editForm, setEditForm, geocoding, handleGeocode, saving, setEditingId, saveEdit }
+  const editSectionProps = { editingId, editForm, setEditForm, geocoding, handleGeocode, saving, setEditingId, saveEdit, showPays }
   const cardActionsProps = { editingId, startEdit, setEditingId, deleteEntry }
 
   return (
@@ -661,7 +656,7 @@ export default function Page() {
         {tab==='transports' && (
           <div>
             <FilterBar filter={filter} setFilter={setFilter} onRefresh={fetchAll} />
-            <CountryBar paysFilter={paysFilter} setPaysFilter={setPaysFilter} />
+            {showPays && <CountryBar paysFilter={paysFilter} setPaysFilter={setPaysFilter} />}
             {loading && <div style={s.empty}>Chargement…</div>}
             {!loading && filteredT.length===0 && <div style={s.empty}><div style={{fontSize:40,marginBottom:12}}>🧳</div>Aucun transport.</div>}
             <div style={{display:'flex',flexDirection:'column',gap:12}}>
@@ -673,7 +668,7 @@ export default function Page() {
                     {e.num && <span style={{fontSize:13,color:'#6b6b67'}}>{e.num}</span>}
                     <span style={s.route}>{e.from} → {e.to}</span>
                     <PersonTagEl person={e.person} />
-                    <PaysTagEl pays={e.pays} />
+                    {showPays && <PaysTagEl pays={e.pays} />}
                     {e.price && <span style={s.priceTag}>{e.price.toFixed(2)} {e.currency||'€'}</span>}
                   </div>
                   <div style={s.details}>
@@ -695,7 +690,7 @@ export default function Page() {
         {tab==='depenses' && (
           <div>
             <FilterBar filter={filter} setFilter={setFilter} onRefresh={fetchAll} />
-            <CountryBar paysFilter={paysFilter} setPaysFilter={setPaysFilter} />
+            {showPays && <CountryBar paysFilter={paysFilter} setPaysFilter={setPaysFilter} />}
             {loading && <div style={s.empty}>Chargement…</div>}
             {!loading && filteredD.length===0 && <div style={s.empty}><div style={{fontSize:40,marginBottom:12}}>💸</div>Aucune dépense.</div>}
             <div style={{display:'flex',flexDirection:'column',gap:12}}>
@@ -708,7 +703,7 @@ export default function Page() {
                       <span style={{...s.typeBadge,...s['badge_cat_'+cat]}}>{catIcons[cat]} {catLabels[cat]}</span>
                       <span style={s.route}>{e.label||'—'}</span>
                       <PersonTagEl person={e.person} />
-                      <PaysTagEl pays={e.pays} />
+                      {showPays && <PaysTagEl pays={e.pays} />}
                       {e.price && <span style={s.priceTag}>{e.price.toFixed(2)} {e.currency||'€'}</span>}
                     </div>
                     <div style={s.details}>
@@ -728,7 +723,7 @@ export default function Page() {
         {tab==='hebergements' && (
           <div>
             <FilterBar filter={filter} setFilter={setFilter} onRefresh={fetchAll} />
-            <CountryBar paysFilter={paysFilter} setPaysFilter={setPaysFilter} />
+            {showPays && <CountryBar paysFilter={paysFilter} setPaysFilter={setPaysFilter} />}
             {loading && <div style={s.empty}>Chargement…</div>}
             {!loading && hebergements.filter(e=>(filter==='all'||e.person===filter||e.person==='both')&&byPays(e)).length===0 && (
               <div style={s.empty}><div style={{fontSize:40,marginBottom:12}}>🏨</div>Aucun hébergement.</div>
@@ -741,7 +736,7 @@ export default function Page() {
                     <span style={{...s.typeBadge,background:'#e6fbe8',color:'#0a4a1a'}}>🏨 Hébergement</span>
                     <span style={s.route}>{e.nom||'—'}</span>
                     <PersonTagEl person={e.person} />
-                    <PaysTagEl pays={e.pays} />
+                    {showPays && <PaysTagEl pays={e.pays} />}
                     {e.price && <span style={s.priceTag}>{e.price.toFixed(2)} {e.currency||'€'}</span>}
                   </div>
                   <div style={s.details}>
@@ -782,7 +777,7 @@ export default function Page() {
                         <span style={{...s.typeBadge,background:'#e6fbe8',color:'#0a4a1a'}}>📍 Étape</span>
                         <span style={s.route}>{e.titre}</span>
                         <PersonTagEl person={e.person} />
-                        <PaysTagEl pays={e.pays} />
+                        {showPays && <PaysTagEl pays={e.pays} />}
                       </div>
                       {e.lieu && (
                         <div style={{fontSize:13,color:'#6b6b67',marginBottom:6}}>
@@ -840,7 +835,7 @@ export default function Page() {
                           <div style={{fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:15,textDecoration:t.done?'line-through':'none',color:t.done?'#a8a8a4':'#1a1a18',display:'flex',flexWrap:'wrap',alignItems:'center',gap:8}}>
                             {t.label}
                             <PersonTagEl person={t.person} />
-                            <PaysTagEl pays={t.pays} />
+                            {showPays && <PaysTagEl pays={t.pays} />}
                           </div>
                           {(t.date||t.note) && (
                             <div style={{fontSize:12,color:'#a8a8a4',marginTop:4,display:'flex',gap:10,flexWrap:'wrap'}}>
@@ -872,25 +867,25 @@ export default function Page() {
             </div>
             <div style={s.card}>
               {addType==='transport' && <>
-                <TransportForm data={formT} set={setFormT} />
+                <TransportForm data={formT} set={setFormT} showPays={showPays} />
                 <button style={{...s.saveBtn,width:'100%',marginTop:16,padding:13}} disabled={saving} onClick={addTransport}>
                   {saving?'Ajout…':'Ajouter ce transport'}
                 </button>
               </>}
               {addType==='depense' && <>
-                <DepenseForm data={formD} set={setFormD} />
+                <DepenseForm data={formD} set={setFormD} showPays={showPays} />
                 <button style={{...s.saveBtn,width:'100%',marginTop:16,padding:13}} disabled={saving} onClick={addDepense}>
                   {saving?'Ajout…':'Ajouter cette dépense'}
                 </button>
               </>}
               {addType==='hebergement' && <>
-                <HebergementForm data={formH} set={setFormH} />
+                <HebergementForm data={formH} set={setFormH} showPays={showPays} />
                 <button style={{...s.saveBtn,width:'100%',marginTop:16,padding:13}} disabled={saving} onClick={addHebergement}>
                   {saving?'Ajout…':'Ajouter cet hébergement'}
                 </button>
               </>}
               {addType==='etape' && <>
-                <EtapeForm data={formE} set={setFormE} geocoding={geocoding} onGeocode={()=>handleGeocode(formE,setFormE)} />
+                <EtapeForm data={formE} set={setFormE} geocoding={geocoding} onGeocode={()=>handleGeocode(formE,setFormE)} showPays={showPays} />
                 <button style={{...s.saveBtn,width:'100%',marginTop:16,padding:13}} disabled={saving} onClick={addEtape}>
                   {saving?'Ajout…':'Ajouter cette étape'}
                 </button>
@@ -908,9 +903,7 @@ export default function Page() {
                   <Field label="Échéance (optionnel)" type="date" value={formTodo.date} onChange={v=>setFormTodo({...formTodo,date:v})} />
                   <Field label="Concerne"><PersonToggle value={formTodo.person} onChange={v=>setFormTodo({...formTodo,person:v})} /></Field>
                 </div>
-                <div style={s.row}>
-                  <Field label="Pays"><PaysSelect value={formTodo.pays||''} onChange={v=>setFormTodo({...formTodo,pays:v})} /></Field>
-                </div>
+                {showPays && <div style={s.row}><Field label="Pays"><PaysSelect value={formTodo.pays||''} onChange={v=>setFormTodo({...formTodo,pays:v})} /></Field></div>}
                 <Field label="Note (optionnel)" value={formTodo.note} onChange={v=>setFormTodo({...formTodo,note:v})} placeholder="Détails, lien…" />
                 <button style={{...s.saveBtn,width:'100%',marginTop:16,padding:13}} onClick={addTodo}>
                   Ajouter la tâche
