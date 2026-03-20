@@ -10,21 +10,22 @@ const client = createClient({
   useCdn: false,
 })
 
-const QUERY_TRANSPORT = `*[_type == "transport"] | order(date asc, timeDep asc) {
+const QUERY_VOYAGES = `*[_type == "voyage"] | order(_createdAt asc) { _id, nom, emoji }`
+const QUERY_TRANSPORT = `*[_type == "transport" && (voyageId == $vid || !defined(voyageId))] | order(date asc, timeDep asc) {
   _id, type, num, from, to, date, timeDep, timeArr, dateArr,
-  terminal, company, booking, price, currency, person, pays, note
+  terminal, company, booking, price, currency, person, pays, voyageId, note
 }`
-const QUERY_DEPENSE = `*[_type == "depense"] | order(date asc) {
-  _id, categorie, label, date, price, currency, person, pays, lien, note
+const QUERY_DEPENSE = `*[_type == "depense" && (voyageId == $vid || !defined(voyageId))] | order(date asc) {
+  _id, categorie, label, date, price, currency, person, pays, voyageId, lien, note
 }`
-const QUERY_ETAPE = `*[_type == "etape"] | order(date asc, ordre asc) {
-  _id, titre, lieu, lat, lng, date, ordre, note, person, pays
+const QUERY_ETAPE = `*[_type == "etape" && (voyageId == $vid || !defined(voyageId))] | order(date asc, ordre asc) {
+  _id, titre, lieu, lat, lng, date, ordre, note, person, pays, voyageId
 }`
-const QUERY_HEBERGEMENT = `*[_type == "hebergement"] | order(dateArrivee asc) {
-  _id, nom, lieu, dateArrivee, dateDepart, prix, currency, person, pays, lien, note
+const QUERY_HEBERGEMENT = `*[_type == "hebergement" && (voyageId == $vid || !defined(voyageId))] | order(dateArrivee asc) {
+  _id, nom, lieu, dateArrivee, dateDepart, prix, currency, person, pays, voyageId, lien, note
 }`
-const QUERY_TODO = `*[_type == "todo"] | order(_createdAt asc) {
-  _id, label, categorie, person, pays, date, note, done
+const QUERY_TODO = `*[_type == "todo" && (voyageId == $vid || !defined(voyageId))] | order(_createdAt asc) {
+  _id, label, categorie, person, pays, voyageId, date, note, done
 }`
 
 const typeLabels  = { avion:'Avion', train:'Train', bus:'Bus', taxi:'Taxi', metro:'Métro', autre:'Autre' }
@@ -460,18 +461,46 @@ export default function Page() {
   const [budgets, setBudgets]       = useState({ lois:'', ines:'' })
   const [todos, setTodos]           = useState([])
   const [formTodo, setFormTodo]     = useState(EMPTY_TODO)
+  const [voyages, setVoyages]       = useState([])
+  const [voyageId, setVoyageId]     = useState('voyage-amerique-sud-2026')
+  const voyageIdRef = useRef('voyage-amerique-sud-2026')
 
   useEffect(() => {
     const saved = localStorage.getItem('voyage_budgets')
     if (saved) setBudgets(JSON.parse(saved))
+    const params = new URLSearchParams(window.location.search)
+    const vid = params.get('v')
+    if (vid) { setVoyageId(vid); voyageIdRef.current = vid }
+    ensureVoyages().then(() => fetchAll(vid || voyageIdRef.current))
   }, [])
 
-  useEffect(()=>{ fetchAll() },[])
+  async function ensureVoyages() {
+    await Promise.all([
+      client.createIfNotExists({ _id:'voyage-amerique-sud-2026', _type:'voyage', nom:'Amérique du Sud 2026', emoji:'🌍' }),
+      client.createIfNotExists({ _id:'voyage-italie-2026', _type:'voyage', nom:'Italie 2026', emoji:'🇮🇹' }),
+    ])
+    const voys = await client.fetch(QUERY_VOYAGES)
+    setVoyages(voys)
+  }
 
-  async function fetchAll() {
+  function changeVoyage(vid) {
+    setVoyageId(vid)
+    voyageIdRef.current = vid
+    window.history.replaceState(null, '', `?v=${vid}`)
+    fetchAll(vid)
+  }
+
+  async function fetchAll(vid) {
+    const activeVid = vid ?? voyageIdRef.current
     setLoading(true)
     try {
-      const [t,d,e,h,td] = await Promise.all([client.fetch(QUERY_TRANSPORT), client.fetch(QUERY_DEPENSE), client.fetch(QUERY_ETAPE), client.fetch(QUERY_HEBERGEMENT), client.fetch(QUERY_TODO)])
+      const [t,d,e,h,td] = await Promise.all([
+        client.fetch(QUERY_TRANSPORT, { vid: activeVid }),
+        client.fetch(QUERY_DEPENSE,   { vid: activeVid }),
+        client.fetch(QUERY_ETAPE,     { vid: activeVid }),
+        client.fetch(QUERY_HEBERGEMENT,{ vid: activeVid }),
+        client.fetch(QUERY_TODO,      { vid: activeVid }),
+      ])
       setTransports(t); setDepenses(d); setEtapes(e); setHebergements(h); setTodos(td)
     } catch(e){ console.error(e) }
     setLoading(false)
@@ -487,8 +516,8 @@ export default function Page() {
     if (!formTodo.label.trim()) return alert('Merci d\'indiquer une tâche.')
     setSaving(true)
     try {
-      await client.create({ _type:'todo', ...formTodo, done: false })
-      setFormTodo(EMPTY_TODO); await fetchAll(); setTab('todo')
+      await client.create({ _type:'todo', ...formTodo, voyageId: voyageIdRef.current, done: false })
+      setFormTodo(EMPTY_TODO); await fetchAll(voyageIdRef.current); setTab('todo')
     } catch(e){ alert('Erreur lors de la sauvegarde.') }
     setSaving(false)
   }
@@ -501,7 +530,7 @@ export default function Page() {
   }
 
   async function deleteTodo(id) {
-    await client.delete(id); fetchAll()
+    await client.delete(id); fetchAll(voyageIdRef.current)
   }
 
   async function handleGeocode(data, set) {
@@ -517,8 +546,8 @@ export default function Page() {
     if (!formT.from||!formT.to) return alert('Merci d\'indiquer le départ et l\'arrivée.')
     setSaving(true)
     try {
-      await client.create({_type:'transport',...formT,price:formT.price?parseFloat(formT.price):undefined})
-      setFormT(EMPTY_T); await fetchAll(); setTab('transports')
+      await client.create({_type:'transport',...formT,voyageId:voyageIdRef.current,price:formT.price?parseFloat(formT.price):undefined})
+      setFormT(EMPTY_T); await fetchAll(voyageIdRef.current); setTab('transports')
     } catch(e){ alert('Erreur lors de la sauvegarde.') }
     setSaving(false)
   }
@@ -527,8 +556,8 @@ export default function Page() {
     if (!formD.label) return alert('Merci d\'indiquer une description.')
     setSaving(true)
     try {
-      await client.create({_type:'depense',...formD,price:formD.price?parseFloat(formD.price):undefined})
-      setFormD(EMPTY_D); await fetchAll(); setTab('depenses')
+      await client.create({_type:'depense',...formD,voyageId:voyageIdRef.current,price:formD.price?parseFloat(formD.price):undefined})
+      setFormD(EMPTY_D); await fetchAll(voyageIdRef.current); setTab('depenses')
     } catch(e){ alert('Erreur lors de la sauvegarde.') }
     setSaving(false)
   }
@@ -537,8 +566,8 @@ export default function Page() {
     if (!formH.nom) return alert('Merci d\'indiquer le nom de l\'hébergement.')
     setSaving(true)
     try {
-      await client.create({_type:'hebergement',...formH,price:formH.price?parseFloat(formH.price):undefined})
-      setFormH(EMPTY_H); await fetchAll(); setTab('hebergements')
+      await client.create({_type:'hebergement',...formH,voyageId:voyageIdRef.current,price:formH.price?parseFloat(formH.price):undefined})
+      setFormH(EMPTY_H); await fetchAll(voyageIdRef.current); setTab('hebergements')
     } catch(e){ alert('Erreur lors de la sauvegarde.') }
     setSaving(false)
   }
@@ -548,12 +577,12 @@ export default function Page() {
     setSaving(true)
     try {
       await client.create({
-        _type:'etape',...formE,
+        _type:'etape',...formE,voyageId:voyageIdRef.current,
         lat: formE.lat ? parseFloat(formE.lat) : undefined,
         lng: formE.lng ? parseFloat(formE.lng) : undefined,
         ordre: formE.ordre ? parseInt(formE.ordre) : undefined,
       })
-      setFormE(EMPTY_E); await fetchAll(); setTab('roadmap')
+      setFormE(EMPTY_E); await fetchAll(voyageIdRef.current); setTab('roadmap')
     } catch(e){ alert('Erreur lors de la sauvegarde.') }
     setSaving(false)
   }
@@ -567,14 +596,14 @@ export default function Page() {
       if (data.lng) data.lng = parseFloat(data.lng)
       if (data.ordre) data.ordre = parseInt(data.ordre)
       await client.patch(id).set(data).commit()
-      setEditingId(null); await fetchAll()
+      setEditingId(null); await fetchAll(voyageIdRef.current)
     } catch(e){ alert('Erreur lors de la sauvegarde.') }
     setSaving(false)
   }
 
   async function deleteEntry(id) {
     if (!confirm('Supprimer ?')) return
-    await client.delete(id); fetchAll()
+    await client.delete(id); fetchAll(voyageIdRef.current)
   }
 
   function startEdit(e, kind) { setEditingId(e._id); setEditKind(kind); setEditForm({...e}) }
@@ -602,7 +631,19 @@ export default function Page() {
     <div style={s.page}>
       <header style={s.header}>
         <div style={s.headerInner} className="header-inner">
-          <div style={s.logo} className="app-logo">🦕 carnet <span style={{color:'#2a5c45'}}>voyage</span></div>
+          <div style={{display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
+            <div style={s.logo} className="app-logo">✈ carnet <span style={{color:'#2a5c45'}}>voyage</span></div>
+            {voyages.length>0 && (
+              <div style={{display:'flex',gap:4}}>
+                {voyages.map(v=>(
+                  <button key={v._id} onClick={()=>changeVoyage(v._id)}
+                    style={{padding:'4px 12px',borderRadius:20,borderWidth:1,borderStyle:'solid',fontSize:12,cursor:'pointer',fontFamily:"'DM Sans',sans-serif",fontWeight:voyageId===v._id?600:400,background:voyageId===v._id?'#2a5c45':'transparent',color:voyageId===v._id?'#fff':'#6b6b67',borderColor:voyageId===v._id?'#2a5c45':'rgba(0,0,0,0.15)'}}>
+                    {v.emoji} {v.nom}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <div style={s.tabs} className="nav-tabs">
             {allTabs.map(([id,label])=>(
               <button key={id} onClick={()=>setTab(id)}
@@ -768,7 +809,7 @@ export default function Page() {
                 {todos.filter(t=>!t.done).length} à faire · {todos.filter(t=>t.done).length} fait{todos.filter(t=>t.done).length>1?'s':''}
               </div>
               {todos.filter(t=>t.done).length>0 && (
-                <button onClick={async ()=>{ await Promise.all(todos.filter(t=>t.done).map(t=>client.delete(t._id))); fetchAll() }} style={{...s.cancelBtn,fontSize:13,padding:'6px 14px'}}>
+                <button onClick={async ()=>{ await Promise.all(todos.filter(t=>t.done).map(t=>client.delete(t._id))); fetchAll(voyageIdRef.current) }} style={{...s.cancelBtn,fontSize:13,padding:'6px 14px'}}>
                   Effacer les tâches finies
                 </button>
               )}
