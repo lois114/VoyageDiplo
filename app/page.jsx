@@ -15,7 +15,7 @@ const QUERY_TRANSPORT = `*[_type == "transport"] | order(date asc, timeDep asc) 
   terminal, company, booking, price, currency, person, note
 }`
 const QUERY_DEPENSE = `*[_type == "depense"] | order(date asc) {
-  _id, categorie, label, date, price, currency, person, note
+  _id, categorie, label, date, price, currency, person, lien, note
 }`
 const QUERY_ETAPE = `*[_type == "etape"] | order(date asc, ordre asc) {
   _id, titre, lieu, lat, lng, date, ordre, note, person
@@ -32,7 +32,7 @@ const personLabel = { lois:'Loïs', ines:'Ines', both:'Loïs & Ines' }
 const personClass = { lois:'ptag_lois', ines:'ptag_ines', both:'ptag_both' }
 
 const EMPTY_T = { type:'avion', num:'', from:'', to:'', date:'', timeDep:'', timeArr:'', dateArr:'', terminal:'', company:'', booking:'', price:'', currency:'€', person:'both', note:'' }
-const EMPTY_D = { categorie:'bouffe', label:'', date:'', price:'', currency:'€', person:'both', note:'' }
+const EMPTY_D = { categorie:'bouffe', label:'', date:'', price:'', currency:'€', person:'both', lien:'', note:'' }
 const EMPTY_E = { titre:'', lieu:'', lat:'', lng:'', date:'', ordre:'', note:'', person:'both' }
 const EMPTY_H = { nom:'', lieu:'', dateArrivee:'', dateDepart:'', price:'', currency:'€', person:'both', lien:'', note:'' }
 
@@ -277,6 +277,10 @@ function DepenseForm({ data, set }) {
       </div>
       <div style={s.sectionTitle}>Voyageur</div>
       <Field label="Concerne"><PersonToggle value={data.person} onChange={v=>set({...data,person:v})} /></Field>
+      <div style={{marginTop:12}}>
+        <div style={s.sectionTitle}>Lien utile</div>
+        <Field label="URL" value={data.lien} onChange={v=>set({...data,lien:v})} placeholder="https://…" />
+      </div>
       <div style={{marginTop:12}}>
         <div style={s.sectionTitle}>Notes</div>
         <textarea style={{...s.input,minHeight:60,resize:'vertical',width:'100%'}} value={data.note} onChange={e=>set({...data,note:e.target.value})} placeholder="Détails…" />
@@ -583,6 +587,7 @@ export default function Page() {
                     <div style={s.details}>
                       {e.date && <div style={s.detail}>Date<span style={{display:'block'}}>{formatDate(e.date)}</span></div>}
                     </div>
+                    {e.lien && <a href={e.lien} target="_blank" rel="noreferrer" style={{display:'inline-block',marginTop:8,fontSize:12,color:'#2a5c45',textDecoration:'underline'}}>🔗 Voir le lien</a>}
                     {e.note && <div style={s.note}>{e.note}</div>}
                     <EditSection e={e} kind="depense" {...editSectionProps} />
                   </div>
