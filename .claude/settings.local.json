@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find C:Userslois1DesktopVoyagecarnet-voyage -path node_modules -prune -o -type f \\\\\\(-name *.js -o -name *.jsx -o -name *.ts -o -name *.tsx \\\\\\) -print)",
+      "Bash(npx next:*)",
+      "Bash(node -e \"require\\(''fs''\\).readFileSync\\(''app/page.jsx'',''utf8''\\)\")"
+    ]
+  }
+}

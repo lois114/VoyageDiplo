@@ -36,6 +36,9 @@ const EMPTY_D = { categorie:'bouffe', label:'', date:'', price:'', currency:'€
 const EMPTY_E = { titre:'', lieu:'', lat:'', lng:'', date:'', ordre:'', note:'', person:'both' }
 const EMPTY_H = { nom:'', lieu:'', dateArrivee:'', dateDepart:'', price:'', currency:'€', person:'both', lien:'', note:'' }
 
+const todoCategories = { transport:'✈ Transport', hebergement:'🏨 Hébergement', activite:'🎯 Activité', visa:'📄 Visa / Docs', shopping:'🛍 Shopping', autre:'📌 Autre' }
+const EMPTY_TODO = { label:'', categorie:'transport', person:'both', date:'', note:'' }
+
 function calcTotals(transports, depenses, hebergements=[]) {
   const result = { lois:{}, ines:{}, both:{} }
   const add = (p, c, v) => { result[p][c] = (result[p][c]||0) + v }
@@ -401,10 +404,15 @@ export default function Page() {
   const [formH, setFormH]           = useState(EMPTY_H)
   const [editForm, setEditForm]     = useState({})
   const [budgets, setBudgets]       = useState({ lois:'', ines:'' })
+  const [todos, setTodos]           = useState([])
+  const [formTodo, setFormTodo]     = useState(EMPTY_TODO)
+  const [showTodoForm, setShowTodoForm] = useState(false)
 
   useEffect(() => {
     const saved = localStorage.getItem('voyage_budgets')
     if (saved) setBudgets(JSON.parse(saved))
+    const savedTodos = localStorage.getItem('voyage_todos')
+    if (savedTodos) setTodos(JSON.parse(savedTodos))
   }, [])
 
   useEffect(()=>{ fetchAll() },[])
@@ -422,6 +430,27 @@ export default function Page() {
     const updated = { ...budgets, [person]: val }
     setBudgets(updated)
     localStorage.setItem('voyage_budgets', JSON.stringify(updated))
+  }
+
+  function saveTodos(list) {
+    setTodos(list)
+    localStorage.setItem('voyage_todos', JSON.stringify(list))
+  }
+
+  function addTodo() {
+    if (!formTodo.label.trim()) return alert('Merci d\'indiquer une tâche.')
+    const newTodo = { ...formTodo, id: Date.now().toString(), done: false }
+    saveTodos([...todos, newTodo])
+    setFormTodo(EMPTY_TODO)
+    setShowTodoForm(false)
+  }
+
+  function toggleTodo(id) {
+    saveTodos(todos.map(t => t.id===id ? {...t, done: !t.done} : t))
+  }
+
+  function deleteTodo(id) {
+    saveTodos(todos.filter(t => t.id!==id))
   }
 
   async function handleGeocode(data, set) {
@@ -509,6 +538,7 @@ export default function Page() {
     ['depenses','💸 Dépenses'],
     ['hebergements','🏨 Hébergements'],
     ['roadmap','🗺 Roadmap'],
+    ['todo',`✅ À faire${todos.filter(t=>!t.done).length ? ` (${todos.filter(t=>!t.done).length})` : ''}`],
     ['ajouter','+ Ajouter'],
     ['resume','Résumé'],
   ]
@@ -668,6 +698,90 @@ export default function Page() {
               </div>
             ))}
             {etapes.some(e=>e.lat&&e.lng) && <RoadmapMap etapes={etapes} />}
+          </div>
+        )}
+
+        {/* À FAIRE */}
+        {tab==='todo' && (
+          <div>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:20,flexWrap:'wrap',gap:8}}>
+              <div style={{fontSize:13,color:'#6b6b67'}}>
+                {todos.filter(t=>!t.done).length} à faire · {todos.filter(t=>t.done).length} fait{todos.filter(t=>t.done).length>1?'s':''}
+              </div>
+              <div style={{display:'flex',gap:8}}>
+                {todos.filter(t=>t.done).length>0 && (
+                  <button onClick={()=>saveTodos(todos.filter(t=>!t.done))} style={{...s.cancelBtn,fontSize:13,padding:'6px 14px'}}>
+                    Effacer les tâches finies
+                  </button>
+                )}
+                <button onClick={()=>setShowTodoForm(v=>!v)} style={{...s.saveBtn,padding:'6px 16px',fontSize:13}}>
+                  {showTodoForm ? '✕ Annuler' : '+ Ajouter'}
+                </button>
+              </div>
+            </div>
+
+            {showTodoForm && (
+              <div style={{...s.card,marginBottom:20}}>
+                <div style={s.sectionTitle}>Nouvelle tâche</div>
+                <div style={s.row}>
+                  <Field label="Tâche" value={formTodo.label} onChange={v=>setFormTodo({...formTodo,label:v})} placeholder="Réserver le vol Paris-Tokyo…" />
+                  <Field label="Catégorie">
+                    <select style={s.input} value={formTodo.categorie} onChange={e=>setFormTodo({...formTodo,categorie:e.target.value})}>
+                      {Object.entries(todoCategories).map(([v,l])=><option key={v} value={v}>{l}</option>)}
+                    </select>
+                  </Field>
+                </div>
+                <div style={s.row}>
+                  <Field label="Échéance (optionnel)" type="date" value={formTodo.date} onChange={v=>setFormTodo({...formTodo,date:v})} />
+                  <Field label="Concerne"><PersonToggle value={formTodo.person} onChange={v=>setFormTodo({...formTodo,person:v})} /></Field>
+                </div>
+                <Field label="Note (optionnel)" value={formTodo.note} onChange={v=>setFormTodo({...formTodo,note:v})} placeholder="Détails, lien…" />
+                <button style={{...s.saveBtn,width:'100%',marginTop:14,padding:12}} onClick={addTodo}>
+                  Ajouter la tâche
+                </button>
+              </div>
+            )}
+
+            {todos.length===0 && !showTodoForm && (
+              <div style={s.empty}><div style={{fontSize:40,marginBottom:12}}>✅</div>Aucune tâche pour l'instant.</div>
+            )}
+
+            {['transport','hebergement','activite','visa','shopping','autre'].map(cat => {
+              const catTodos = todos.filter(t=>t.categorie===cat)
+              if (!catTodos.length) return null
+              const pending = catTodos.filter(t=>!t.done)
+              const done = catTodos.filter(t=>t.done)
+              return (
+                <div key={cat} style={{marginBottom:24}}>
+                  <div style={{...s.sectionTitle,display:'flex',alignItems:'center',gap:8}}>
+                    {todoCategories[cat]}
+                    {pending.length>0 && <span style={{background:'#2a5c45',color:'#fff',fontSize:10,padding:'1px 7px',borderRadius:20,fontWeight:600}}>{pending.length}</span>}
+                  </div>
+                  <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                    {[...pending, ...done].map(t=>(
+                      <div key={t.id} style={{...s.card,padding:'12px 16px',opacity:t.done?0.55:1,display:'flex',alignItems:'flex-start',gap:12}}>
+                        <button onClick={()=>toggleTodo(t.id)} style={{width:22,height:22,borderRadius:6,borderWidth:2,borderStyle:'solid',borderColor:t.done?'#2a5c45':'rgba(0,0,0,0.2)',background:t.done?'#2a5c45':'transparent',cursor:'pointer',flexShrink:0,marginTop:1,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,color:'#fff'}}>
+                          {t.done?'✓':''}
+                        </button>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:15,textDecoration:t.done?'line-through':'none',color:t.done?'#a8a8a4':'#1a1a18',display:'flex',flexWrap:'wrap',alignItems:'center',gap:8}}>
+                            {t.label}
+                            <PersonTagEl person={t.person} />
+                          </div>
+                          {(t.date||t.note) && (
+                            <div style={{fontSize:12,color:'#a8a8a4',marginTop:4,display:'flex',gap:10,flexWrap:'wrap'}}>
+                              {t.date && <span>📅 {formatDate(t.date)}</span>}
+                              {t.note && <span style={{fontStyle:'italic'}}>{t.note}</span>}
+                            </div>
+                          )}
+                        </div>
+                        <button onClick={()=>deleteTodo(t.id)} style={{...s.iconBtn,padding:'3px 8px',fontSize:12,flexShrink:0}}>✕</button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )
+            })}
           </div>
         )}
 
