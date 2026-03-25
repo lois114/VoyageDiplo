@@ -25,7 +25,7 @@ const QUERY_HEBERGEMENT = `*[_type == "hebergement" && (voyageId == $vid || !def
   _id, nom, lieu, dateArrivee, dateDepart, prix, currency, person, pays, voyageId, lien, note
 }`
 const QUERY_TODO = `*[_type == "todo" && (voyageId == $vid || !defined(voyageId))] | order(_createdAt asc) {
-  _id, label, categorie, person, pays, voyageId, date, note, done
+  _id, label, categorie, person, pays, voyageId, date, note, lien, done
 }`
 
 const typeLabels  = { avion:'Avion', train:'Train', bus:'Bus', taxi:'Taxi', metro:'Métro', autre:'Autre' }
@@ -50,7 +50,7 @@ const EMPTY_E = { titre:'', lieu:'', lat:'', lng:'', date:'', ordre:'', note:'',
 const EMPTY_H = { nom:'', lieu:'', dateArrivee:'', dateDepart:'', price:'', currency:'€', person:'both', pays:'', lien:'', note:'' }
 
 const todoCategories = { transport:'✈ Transport', hebergement:'🏨 Hébergement', activite:'🎯 Activité', visa:'📄 Visa / Docs', shopping:'🛍 Shopping', autre:'📌 Autre' }
-const EMPTY_TODO = { label:'', categorie:'transport', person:'both', pays:'', date:'', note:'' }
+const EMPTY_TODO = { label:'', categorie:'transport', person:'both', pays:'', date:'', note:'', lien:'' }
 
 function calcTotals(transports, depenses, hebergements=[]) {
   const result = { lois:{}, ines:{}, both:{} }
@@ -837,10 +837,11 @@ export default function Page() {
                             <PersonTagEl person={t.person} />
                             {showPays && <PaysTagEl pays={t.pays} />}
                           </div>
-                          {(t.date||t.note) && (
+                          {(t.date||t.note||t.lien) && (
                             <div style={{fontSize:12,color:'#a8a8a4',marginTop:4,display:'flex',gap:10,flexWrap:'wrap'}}>
                               {t.date && <span>📅 {formatDate(t.date)}</span>}
                               {t.note && <span style={{fontStyle:'italic'}}>{t.note}</span>}
+                              {t.lien && <a href={t.lien} target="_blank" rel="noopener noreferrer" style={{color:'#2a5c45',textDecoration:'none',fontWeight:600}}>🔗 Voir le lien</a>}
                             </div>
                           )}
                         </div>
@@ -904,7 +905,10 @@ export default function Page() {
                   <Field label="Concerne"><PersonToggle value={formTodo.person} onChange={v=>setFormTodo({...formTodo,person:v})} /></Field>
                 </div>
                 {showPays && <div style={s.row}><Field label="Pays"><PaysSelect value={formTodo.pays||''} onChange={v=>setFormTodo({...formTodo,pays:v})} /></Field></div>}
-                <Field label="Note (optionnel)" value={formTodo.note} onChange={v=>setFormTodo({...formTodo,note:v})} placeholder="Détails, lien…" />
+                <div style={s.row}>
+                  <Field label="Lien (optionnel)" value={formTodo.lien} onChange={v=>setFormTodo({...formTodo,lien:v})} placeholder="https://…" />
+                  <Field label="Note (optionnel)" value={formTodo.note} onChange={v=>setFormTodo({...formTodo,note:v})} placeholder="Détails…" />
+                </div>
                 <button style={{...s.saveBtn,width:'100%',marginTop:16,padding:13}} onClick={addTodo}>
                   Ajouter la tâche
                 </button>
