@@ -25,7 +25,7 @@ const QUERY_HEBERGEMENT = `*[_type == "hebergement" && (voyageId == $vid || !def
   _id, nom, lieu, dateArrivee, dateDepart, prix, currency, person, pays, voyageId, lien, note
 }`
 const QUERY_TODO = `*[_type == "todo" && (voyageId == $vid || !defined(voyageId))] | order(_createdAt asc) {
-  _id, label, categorie, person, pays, voyageId, date, note, lien, done
+  _id, label, categorie, person, pays, voyageId, date, note, lien, priorite, done
 }`
 
 const typeLabels  = { avion:'Avion', train:'Train', bus:'Bus', taxi:'Taxi', metro:'Métro', autre:'Autre' }
@@ -50,7 +50,8 @@ const EMPTY_E = { titre:'', lieu:'', lat:'', lng:'', date:'', ordre:'', note:'',
 const EMPTY_H = { nom:'', lieu:'', dateArrivee:'', dateDepart:'', price:'', currency:'€', person:'both', pays:'', lien:'', note:'' }
 
 const todoCategories = { transport:'✈ Transport', hebergement:'🏨 Hébergement', activite:'🎯 Activité', visa:'📄 Visa / Docs', shopping:'🛍 Shopping', autre:'📌 Autre' }
-const EMPTY_TODO = { label:'', categorie:'transport', person:'both', pays:'', date:'', note:'', lien:'' }
+const todoPriorities = { urgent:{ label:'🔴 Urgent', bg:'#fee2e2', color:'#b91c1c' }, important:{ label:'🟠 Important', bg:'#ffedd5', color:'#c2410c' }, normal:{ label:'⚪ Normal', bg:'#f3f4f6', color:'#6b7280' }, optionnel:{ label:'🔵 Optionnel', bg:'#eff6ff', color:'#1d4ed8' } }
+const EMPTY_TODO = { label:'', categorie:'transport', person:'both', pays:'', date:'', note:'', lien:'', priorite:'normal' }
 
 function calcTotals(transports, depenses, hebergements=[]) {
   const result = { lois:{}, ines:{}, both:{} }
@@ -400,6 +401,37 @@ function HebergementForm({ data, set, showPays }) {
   )
 }
 
+function TodoForm({ data, set, showPays }) {
+  return (
+    <div>
+      <div style={s.row}>
+        <Field label="Tâche" value={data.label} onChange={v=>set({...data,label:v})} placeholder="Réserver le vol Paris-Tokyo…" />
+        <Field label="Catégorie">
+          <select style={s.input} value={data.categorie} onChange={e=>set({...data,categorie:e.target.value})}>
+            {Object.entries(todoCategories).map(([v,l])=><option key={v} value={v}>{l}</option>)}
+          </select>
+        </Field>
+      </div>
+      <div style={s.row}>
+        <Field label="Priorité">
+          <select style={s.input} value={data.priorite||'normal'} onChange={e=>set({...data,priorite:e.target.value})}>
+            {Object.entries(todoPriorities).map(([v,p])=><option key={v} value={v}>{p.label}</option>)}
+          </select>
+        </Field>
+        <Field label="Échéance (optionnel)" type="date" value={data.date} onChange={v=>set({...data,date:v})} />
+      </div>
+      <div style={s.row}>
+        <Field label="Lien (optionnel)" value={data.lien} onChange={v=>set({...data,lien:v})} placeholder="https://…" />
+        <Field label="Note (optionnel)" value={data.note} onChange={v=>set({...data,note:v})} placeholder="Détails…" />
+      </div>
+      <div style={s.row}>
+        <Field label="Concerne"><PersonToggle value={data.person} onChange={v=>set({...data,person:v})} /></Field>
+        {showPays && <Field label="Pays"><PaysSelect value={data.pays||''} onChange={v=>set({...data,pays:v})} /></Field>}
+      </div>
+    </div>
+  )
+}
+
 // ── Edit / Card sub-components ────────────────────────────────────────────────
 function EditSection({ e, kind, editingId, editForm, setEditForm, geocoding, handleGeocode, saving, setEditingId, saveEdit, showPays }) {
   if (editingId!==e._id) return null
@@ -409,6 +441,7 @@ function EditSection({ e, kind, editingId, editForm, setEditForm, geocoding, han
       {kind==='depense'      && <DepenseForm data={editForm} set={setEditForm} showPays={showPays} />}
       {kind==='etape'        && <EtapeForm data={editForm} set={setEditForm} geocoding={geocoding} onGeocode={()=>handleGeocode(editForm,setEditForm)} showPays={showPays} />}
       {kind==='hebergement'  && <HebergementForm data={editForm} set={setEditForm} showPays={showPays} />}
+      {kind==='todo'         && <TodoForm data={editForm} set={setEditForm} showPays={showPays} />}
       <div style={{display:'flex',gap:8,marginTop:12}}>
         <button style={s.cancelBtn} onClick={()=>setEditingId(null)}>Annuler</button>
         <button style={s.saveBtn} disabled={saving} onClick={()=>saveEdit(e._id)}>
@@ -826,28 +859,38 @@ export default function Page() {
                     {pending.length>0 && <span style={{background:'#2a5c45',color:'#fff',fontSize:10,padding:'1px 7px',borderRadius:20,fontWeight:600}}>{pending.length}</span>}
                   </div>
                   <div style={{display:'flex',flexDirection:'column',gap:8}}>
-                    {[...pending, ...done].map(t=>(
-                      <div key={t._id} style={{...s.card,padding:'12px 16px',opacity:t.done?0.55:1,display:'flex',alignItems:'flex-start',gap:12}}>
-                        <button onClick={()=>toggleTodo(t._id, t.done)} style={{width:22,height:22,borderRadius:6,borderWidth:2,borderStyle:'solid',borderColor:t.done?'#2a5c45':'rgba(0,0,0,0.2)',background:t.done?'#2a5c45':'transparent',cursor:'pointer',flexShrink:0,marginTop:1,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,color:'#fff'}}>
-                          {t.done?'✓':''}
-                        </button>
-                        <div style={{flex:1,minWidth:0}}>
-                          <div style={{fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:15,textDecoration:t.done?'line-through':'none',color:t.done?'#a8a8a4':'#1a1a18',display:'flex',flexWrap:'wrap',alignItems:'center',gap:8}}>
-                            {t.label}
-                            <PersonTagEl person={t.person} />
-                            {showPays && <PaysTagEl pays={t.pays} />}
-                          </div>
-                          {(t.date||t.note||t.lien) && (
-                            <div style={{fontSize:12,color:'#a8a8a4',marginTop:4,display:'flex',gap:10,flexWrap:'wrap'}}>
-                              {t.date && <span>📅 {formatDate(t.date)}</span>}
-                              {t.note && <span style={{fontStyle:'italic'}}>{t.note}</span>}
-                              {t.lien && <a href={t.lien} target="_blank" rel="noopener noreferrer" style={{color:'#2a5c45',textDecoration:'none',fontWeight:600}}>🔗 Voir le lien</a>}
+                    {[...pending, ...done].map(t=>{
+                      const prio = todoPriorities[t.priorite||'normal']
+                      const isEditing = editingId===t._id
+                      return (
+                      <div key={t._id} style={{...s.card,padding:'12px 16px',opacity:t.done?0.55:1,...(isEditing?{borderColor:'#2a5c45',borderWidth:2,borderStyle:'solid'}:{})}}>
+                        <div style={{display:'flex',alignItems:'flex-start',gap:12}}>
+                          <button onClick={()=>toggleTodo(t._id, t.done)} style={{width:22,height:22,borderRadius:6,borderWidth:2,borderStyle:'solid',borderColor:t.done?'#2a5c45':'rgba(0,0,0,0.2)',background:t.done?'#2a5c45':'transparent',cursor:'pointer',flexShrink:0,marginTop:1,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,color:'#fff'}}>
+                            {t.done?'✓':''}
+                          </button>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontFamily:'Syne,sans-serif',fontWeight:700,fontSize:15,textDecoration:t.done?'line-through':'none',color:t.done?'#a8a8a4':'#1a1a18',display:'flex',flexWrap:'wrap',alignItems:'center',gap:8}}>
+                              {t.label}
+                              {(t.priorite&&t.priorite!=='normal') && <span style={{fontSize:11,fontWeight:600,padding:'1px 8px',borderRadius:20,background:prio.bg,color:prio.color,fontFamily:"'DM Sans',sans-serif"}}>{prio.label}</span>}
+                              <PersonTagEl person={t.person} />
+                              {showPays && <PaysTagEl pays={t.pays} />}
                             </div>
-                          )}
+                            {(t.date||t.note||t.lien) && (
+                              <div style={{fontSize:12,color:'#a8a8a4',marginTop:4,display:'flex',gap:10,flexWrap:'wrap'}}>
+                                {t.date && <span>📅 {formatDate(t.date)}</span>}
+                                {t.note && <span style={{fontStyle:'italic'}}>{t.note}</span>}
+                                {t.lien && <a href={t.lien} target="_blank" rel="noopener noreferrer" style={{color:'#2a5c45',textDecoration:'none',fontWeight:600}}>🔗 Voir le lien</a>}
+                              </div>
+                            )}
+                          </div>
+                          <div style={{display:'flex',gap:4,flexShrink:0}}>
+                            <button onClick={()=>isEditing?setEditingId(null):startEdit(t,'todo')} style={{...s.iconBtn,padding:'3px 8px',fontSize:12}}>{isEditing?'✕':'✏️'}</button>
+                            <button onClick={()=>deleteTodo(t._id)} style={{...s.iconBtn,padding:'3px 8px',fontSize:12}}>✕</button>
+                          </div>
                         </div>
-                        <button onClick={()=>deleteTodo(t._id)} style={{...s.iconBtn,padding:'3px 8px',fontSize:12,flexShrink:0}}>✕</button>
+                        <EditSection e={t} kind="todo" {...editSectionProps} />
                       </div>
-                    ))}
+                    )})}
                   </div>
                 </div>
               )
@@ -892,23 +935,7 @@ export default function Page() {
                 </button>
               </>}
               {addType==='todo' && <>
-                <div style={s.row}>
-                  <Field label="Tâche" value={formTodo.label} onChange={v=>setFormTodo({...formTodo,label:v})} placeholder="Réserver le vol Paris-Tokyo…" />
-                  <Field label="Catégorie">
-                    <select style={s.input} value={formTodo.categorie} onChange={e=>setFormTodo({...formTodo,categorie:e.target.value})}>
-                      {Object.entries(todoCategories).map(([v,l])=><option key={v} value={v}>{l}</option>)}
-                    </select>
-                  </Field>
-                </div>
-                <div style={s.row}>
-                  <Field label="Échéance (optionnel)" type="date" value={formTodo.date} onChange={v=>setFormTodo({...formTodo,date:v})} />
-                  <Field label="Concerne"><PersonToggle value={formTodo.person} onChange={v=>setFormTodo({...formTodo,person:v})} /></Field>
-                </div>
-                {showPays && <div style={s.row}><Field label="Pays"><PaysSelect value={formTodo.pays||''} onChange={v=>setFormTodo({...formTodo,pays:v})} /></Field></div>}
-                <div style={s.row}>
-                  <Field label="Lien (optionnel)" value={formTodo.lien} onChange={v=>setFormTodo({...formTodo,lien:v})} placeholder="https://…" />
-                  <Field label="Note (optionnel)" value={formTodo.note} onChange={v=>setFormTodo({...formTodo,note:v})} placeholder="Détails…" />
-                </div>
+                <TodoForm data={formTodo} set={setFormTodo} showPays={showPays} />
                 <button style={{...s.saveBtn,width:'100%',marginTop:16,padding:13}} onClick={addTodo}>
                   Ajouter la tâche
                 </button>
